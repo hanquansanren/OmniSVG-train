@@ -21,9 +21,6 @@
 - [2025/04/09] 👋 Upload paper and init project. [Read](https://arxiv.org/abs/2504.06263)
 
 
-<p align="center">
-    <img src="assets/OmniSVG-demo-gen-proc-anime-1080.gif" alt="Demo GIF" width="720px" />
-</p>
 
 ## 🧩 Community Contributions
 If you are developing / using OmniSVG in your projects, or you want to contribute to OmniSVG, please let us know 🎉.
@@ -160,10 +157,6 @@ python app.py
 
 Or try our [Online Demo on Hugging Face Spaces](https://huggingface.co/spaces/OmniSVG/OmniSVG-3B).
 
-<div align="center">
-  <img src="assets/commands.png" alt="cmd" height="256px" />
-  <img src="assets/omnisvg-teaser.gif" alt="Demo GIF" height="256px" style="margin-right: 10px;" />
-</div>
 
 
 ## 5. Training
