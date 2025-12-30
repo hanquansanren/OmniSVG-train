@@ -7,7 +7,7 @@
 <a href="https://huggingface.co/OmniSVG"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Dataset%20-HF-orange"></a> &nbsp;&nbsp;&nbsp;&nbsp;
 <a href="https://huggingface.co/datasets/OmniSVG/MMSVGBench"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Benchmark-HF-orange"></a> &nbsp;&nbsp;&nbsp;&nbsp;
 <a href="https://huggingface.co/spaces/OmniSVG/OmniSVG-3B"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20Demo%20-HF-orange"></a>
- <a href='https://github.com/OpenVGLab/OmniSVG-train'><img src='https://img.shields.io/badge/github-repo-blue?logo=github'></a> &nbsp;&nbsp;&nbsp;&nbsp;
+<a href='https://github.com/OpenVGLab/OmniSVG-train'><img src='https://img.shields.io/badge/Training-Code-blue?logo=github'></a>
 </div>
 
 ## 🔥🔥🔥 News !!
