@@ -1,0 +1,90 @@
+# OmniSVG Tokenization Configuration
+# Supports both 4B and 8B model variants
+
+# ==============================================================================
+# Model-specific configurations
+# ==============================================================================
+models:
+  # 4B Model (based on Qwen2.5-VL-3B-Instruct)
+  4B:
+    base_vocab_size: 151936
+    extended_vocab_size: 197000
+    base_model: "/mnt/jfs-test/Qwen2.5-VL-3B-Instruct"
+    checkpoint: "OmniSVG/OmniSVG1.1_4B"
+    
+    # Special tokens (computed from base_vocab_size)
+    special_tokens:
+      pad_token_id: 151643
+      bos_token_id: 196998
+      eos_token_id: 196999
+    
+    # SVG token offsets (base_vocab_size + offset)
+    svg_tokens:
+      num_svg_end: 1
+      mask_token_offset: 151937   # base + 1
+      eom_token_offset: 151938    # base + 2
+      
+      # Commands start at base + 2
+      commands:
+        move: 151938
+        line: 151939
+        curve: 151940
+        arc: 151941
+        close: 151942
+      
+      # Coordinate tokens
+      coordinates:
+        bbox_size: 200
+        pix_pad_offset: 151943    # base + 7, after commands
+        coord_pad_offset: 151943
+      
+      # Arc parameters
+      arc_params:
+        start_offset: 196436
+
+  # 8B Model (based on Qwen2.5-VL-7B-Instruct)
+  8B:
+    base_vocab_size: 152064
+    extended_vocab_size: 197128
+    base_model: "/mnt/jfs-test/Qwen2.5-VL-7B-Instruct"
+    checkpoint: "OmniSVG/OmniSVG1.1_8B"
+    
+    # Special tokens (computed from base_vocab_size)
+    special_tokens:
+      pad_token_id: 151643
+      bos_token_id: 197126
+      eos_token_id: 197127
+    
+    # SVG token offsets (base_vocab_size + offset)
+    svg_tokens:
+      num_svg_end: 1
+      mask_token_offset: 152065   # base + 1
+      eom_token_offset: 152066    # base + 2
+      
+      # Commands start at base + 2
+      commands:
+        move: 152066
+        line: 152067
+        curve: 152068
+        arc: 152069
+        close: 152070
+      
+      # Coordinate tokens
+      coordinates:
+        bbox_size: 200
+        pix_pad_offset: 152071    # base + 7, after commands
+        coord_pad_offset: 152071
+      
+      # Arc parameters
+      arc_params:
+        start_offset: 196564
+
+# ==============================================================================
+# Shared configurations
+# ==============================================================================
+color_tokens:
+  color_token_offset: 40010
+  max_color_tokens: 4098
+
+# Default model (can be overridden via command line)
+default_model: "4B"
