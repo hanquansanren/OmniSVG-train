@@ -23,10 +23,10 @@ NUM_GPUS=8
 BATCH_SIZE=2
 
 # Maximum SVG sequence length
-MAX_SEQ_LENGTH=512
+MAX_SEQ_LENGTH=2048
 
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
-DATA_DIR="/data/cref/OmniSVG-code/utils/data"
+DATA_DIR="./data"
 
 # Output directory for checkpoints and logs
 OUTPUT_DIR="./output"
