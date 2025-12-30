@@ -303,7 +303,6 @@ accelerate launch train.py \
 
 ### 5.4 Training Examples
 
-See `run_examples.sh` for comprehensive training examples:
 
 ```bash
 # Single GPU training (for debugging)
@@ -380,7 +379,6 @@ OmniSVG/
 ├── inference.py               # Inference script
 ├── app.py                     # Gradio demo
 ├── run.sh                     # Training launch script
-├── run_examples.sh            # Training examples
 └── requirements.txt
 ```
 
