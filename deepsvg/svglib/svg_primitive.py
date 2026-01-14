@@ -54,18 +54,15 @@ class SVGPrimitive:
     def from_xml(cls, x: minidom.Element):
         tag_name = x.tagName
 
-        # 获取 fill 属性
         fill = x.getAttribute("fill")
         print("Original svg path fill", fill)
 
-        # 获取 fill-rule 属性，如果未指定则默认为 'nonzero'
         fill_rule_attr = x.getAttribute("fill-rule")
         if fill_rule_attr == "evenodd":
-            fill_rule = Filling.FILL  # 对应 'evenodd'
+            fill_rule = Filling.FILL  
         else:
-            fill_rule = Filling.FILL  # 默认 'nonzero'
+            fill_rule = Filling.FILL  
 
-        # 获取 filling 属性并映射到 Filling 枚举
         filling_attr = x.getAttribute("filling")
         if filling_attr == "0":
             fill_rule = Filling.FILL
@@ -74,23 +71,20 @@ class SVGPrimitive:
         elif filling_attr == "2":
             fill_rule = Filling.OUTLINE
         else:
-            fill_rule = Filling.FILL  # 默认
+            fill_rule = Filling.FILL  # 
 
-        # 处理空或缺失的 fill 属性
         if fill == "" or fill.lower() == "none":
             print("Fill attribute is 'none' or empty, setting to fully transparent black.")
-            fill = "#000000"   # 将颜色设置为黑色
-            fill_opacity = 0.0  # 完全透明
-            fill_rule = Filling.ERASE  # 将填充类型设为 ERASE
+            fill = "#000000"  
+            fill_opacity = 0.0  
+            fill_rule = Filling.ERASE  
         elif fill is None:
             print("Fill attribute is missing, setting default to opaque black.")
-            fill = "#000000"  # 黑色填充
-            fill_opacity = 1.0  # 完全不透明
+            fill = "#000000"  # 
+            fill_opacity = 1.0  # 
         else:
-            # 处理 fill 属性为非空或非 none 的情况
             fill_opacity = float(x.getAttribute("fill-opacity")) if x.hasAttribute("fill-opacity") else 1.0
 
-        # 获取其他属性 (stroke, opacity, etc.)
         stroke = x.getAttribute("stroke") or None
         stroke_opacity = float(x.getAttribute("stroke-opacity")) if x.hasAttribute("stroke-opacity") else 1.0
         stroke_width = float(x.getAttribute("stroke-width")) if x.hasAttribute("stroke-width") else 3.0
@@ -520,8 +514,7 @@ class SVGPathGroup(SVGPrimitive):
     
         for geom in all_unique_geoms:
             geom.scale(factor)
-    
-          return self
+        return self
 
     def numericalize(self, n=256):
         return self._apply_to_paths("numericalize", n)
