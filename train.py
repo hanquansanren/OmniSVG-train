@@ -690,8 +690,6 @@ def train(args, config: OmniSVGConfig):
         processor=processor,
         token_config=config.tokenization,
         train_config=config.training,
-        require_aug=True,
-        text_only_ratio=config.training.text_only_ratio,
     )
     
     val_dataset = OmniSVGDataset(
@@ -704,8 +702,6 @@ def train(args, config: OmniSVGConfig):
         processor=processor,
         token_config=config.tokenization,
         train_config=config.training,
-        require_aug=False,
-        text_only_ratio=0.5,
     )
     
     # Create collate functions
