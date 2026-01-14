@@ -184,8 +184,6 @@ class OmniSVGDataset(Dataset):
         train_config: Optional[TrainConfig] = None,
         
         # Options
-        require_aug: bool = False,
-        text_only_ratio: float = 0.5,
         target_image_size: int = 448,
     ):
         """
@@ -202,16 +200,12 @@ class OmniSVGDataset(Dataset):
             processor: Image processor
             token_config: Tokenization configuration
             train_config: Training configuration
-            require_aug: Whether to apply data augmentation
-            text_only_ratio: Ratio of text-only samples
             target_image_size: Target image size
         """
         self.max_len = max_len
         self.text_len = text_len
         self.tokenizer = tokenizer
         self.processor = processor
-        self.require_aug = require_aug
-        self.text_only_ratio = text_only_ratio
         self.target_image_size = target_image_size
         
         # Load configs
