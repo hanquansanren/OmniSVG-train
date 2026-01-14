@@ -311,8 +311,16 @@ class ColorProcessor:
             3968  # (15 << 8) + (8 << 4) + 0
         """
         try:
+            # Handle empty string as black (#000000)
+            if not color_hex or (isinstance(color_hex, str) and color_hex.strip() == ''):
+                return 0  # Black
+            
             # Normalize first
             color_hex = ColorProcessor.normalize(color_hex)
+            
+            # Handle empty string after normalization (edge case)
+            if not color_hex or color_hex.strip() == '':
+                return 0  # Black
             
             if isinstance(color_hex, str) and color_hex.startswith('#') and len(color_hex) == 7:
                 # Extract and quantize each channel (8-bit to 4-bit)
@@ -323,11 +331,11 @@ class ColorProcessor:
                 # Combine into 12-bit value
                 return (r << 8) + (g << 4) + b
             else:
-                print(f"Warning: Non-standard color format '{color_hex}'. Using default.")
+                print(f"Warning: Non-standard color format '{color_hex}'. Using default (black).")
                 return 0
                 
         except (ValueError, TypeError) as e:
-            print(f"Warning: Unable to parse color '{color_hex}': {e}. Using default.")
+            print(f"Warning: Unable to parse color '{color_hex}': {e}. Using default (black).")
             return 0
     
     @staticmethod
