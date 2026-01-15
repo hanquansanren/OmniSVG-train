@@ -119,33 +119,27 @@ class SVGPath:
 
     @staticmethod
     def from_xml(x: minidom.Element):
-        # 获取 fill 属性 - 区分空字符串和缺失属性
-        # 缺失 fill 属性或 fill="" 应该使用默认填充色（黑色）
-        # 只有显式设置 fill="none" 才表示不填充
         if x.hasAttribute("fill"):
             fill_attr = x.getAttribute("fill")
             if fill_attr == "" or fill_attr.lower() == "none":
-                fill = "none"  # 显式不填充
+                fill = "none"  #
             else:
-                fill = fill_attr  # 使用指定颜色
+                fill = fill_attr  
         else:
-            fill = "#000000"  # 缺失fill属性，使用默认黑色填充
+            fill = "#000000"  
 
         fill_opacity = float(x.getAttribute("fill-opacity")) if x.hasAttribute("fill-opacity") else 1.0
         if fill_opacity == 0.0:
             fill_opacity = 1.0
 
-        # 获取 fill-rule 属性，如果未指定则默认为 'nonzero'
         fill_rule = x.getAttribute("fill-rule") or 'nonzero'
         path_fill_rule = fill_rule
 
 
-        # 获取其他属性 (stroke, opacity, etc.)
         stroke = x.getAttribute("stroke") or None
         stroke_opacity = float(x.getAttribute("stroke-opacity")) if x.hasAttribute("stroke-opacity") else 1.0
         stroke_width = float(x.getAttribute("stroke-width")) if x.hasAttribute("stroke-width") else 3.0
 
-        #print(f"Parsed SVGPath: fill={fill}, fill-opacity={fill_opacity}, stroke={stroke}, stroke_width={stroke_width}, fill_rule={fill_rule}")
 
         s = x.getAttribute('d')
         svg_path = SVGPath.from_str(s, fill=fill, stroke=stroke, 
@@ -273,11 +267,7 @@ class SVGPath:
         handles = self._get_handles_viz() if with_handles else ()
         return [*points, *handles]
 
-    '''
-    def draw(self, viewbox=Bbox(24), *args, **kwargs):
-        from .svg import SVG
-        return SVG([self.to_group()], viewbox=viewbox).draw(*args, **kwargs)
-    '''
+
     def draw(self, ax, fill=False, stroke_color='black', stroke_width=1.0, fill_color='black', fill_opacity=1.0, rotation=0):
         import matplotlib.patches as patches
         import matplotlib.path as mpath
@@ -287,13 +277,12 @@ class SVGPath:
         path = mpath.Path(path_data['vertices'], path_data['codes'])
         transform = patches.Affine2D().rotate_deg(rotation) + ax.transData
 
-        # 设置填充颜色和透明度
         patch = patches.PathPatch(
             path,
             facecolor=fill_color if fill else 'none',
             edgecolor=stroke_color,
             lw=stroke_width,
-            alpha=fill_opacity  # 设置填充透明度
+            alpha=fill_opacity  
         )
         patch.set_transform(transform)
         ax.add_patch(patch)
