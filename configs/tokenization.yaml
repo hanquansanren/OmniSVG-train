@@ -45,15 +45,15 @@ models:
   # 8B Model (based on Qwen2.5-VL-7B-Instruct)
   8B:
     base_vocab_size: 152064
-    extended_vocab_size: 197128
-    base_model: "/mnt/jfs-test/Qwen2.5-VL-7B-Instruct"
+    extended_vocab_size: 197000
+    base_model: "Qwen/Qwen2.5-VL-7B-Instruct"
     checkpoint: "OmniSVG/OmniSVG1.1_8B"
     
     # Special tokens (computed from base_vocab_size)
     special_tokens:
       pad_token_id: 151643
-      bos_token_id: 197126
-      eos_token_id: 197127
+      bos_token_id: 196999
+      eos_token_id: 196998
     
     # SVG token offsets (base_vocab_size + offset)
     svg_tokens:
