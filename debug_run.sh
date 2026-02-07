@@ -14,26 +14,29 @@ MODEL_SIZE="4B"
 
 # Enable Flash Attention 2 for faster training (recommended)
 # Set to "true" or "false"
-USE_FLASH_ATTN="false"  
+USE_FLASH_ATTN="true"  
 
+# Disable P2P and IB for RTX 4000 series compatibility
+# Set to "true" for RTX 4000 series, "false" for A100/H100
+DISABLE_NCCL_P2P_IB="true" 
 
 # Number of GPUs to use
-NUM_GPUS=8
+NUM_GPUS=1
 
 # Batch size per GPU
-BATCH_SIZE=4
+BATCH_SIZE=1
 
 # Maximum SVG sequence length
 MAX_SEQ_LENGTH=2048
 
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
-DATA_DIR="./data"
+DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
 
 # Output directory for checkpoints and logs
 OUTPUT_DIR="./output"
 
 # Project name (leave empty for auto-generated name)
-PROJECT_NAME=""
+PROJECT_NAME="omnisvg_4b_$(date +%Y%m%d_%H%M%S)"
 
 # Resume from checkpoint
 # Options:
@@ -43,7 +46,7 @@ PROJECT_NAME=""
 RESUME_CHECKPOINT=""
 
 # Use HuggingFace datasets (set to "true" to auto-download)
-USE_HF_DATA="true"
+USE_HF_DATA="false"
 
 # HuggingFace datasets to use (only if USE_HF_DATA="true")
 # Options: "illustration", "icon", or "illustration icon" (both)
@@ -55,6 +58,13 @@ HF_DATASETS="illustration icon"
 
 # Config directory
 CONFIG_DIR="./configs"
+
+# Training config file name
+# Options: 
+#   - "train_config.yaml" (standard configuration)
+#   - "train_config_low_memory.yaml" (optimized for low VRAM)
+#   - Or create your own custom config file
+TRAIN_CONFIG_FILE="train_config.yaml"
 
 # Accelerate config file (for DeepSpeed, FSDP, etc.)
 # Leave empty for default settings
@@ -81,6 +91,7 @@ CMD_ARGS+=" --project_name ${PROJECT_NAME}"
 CMD_ARGS+=" --batch_size ${BATCH_SIZE}"
 CMD_ARGS+=" --max_seq_length ${MAX_SEQ_LENGTH}"
 CMD_ARGS+=" --config_dir ${CONFIG_DIR}"
+CMD_ARGS+=" --train_config_file ${TRAIN_CONFIG_FILE}"
 
 # Flash attention flag
 if [ "$USE_FLASH_ATTN" = "true" ]; then
@@ -117,6 +128,8 @@ echo "OmniSVG Training"
 echo "============================================================"
 echo "Model Size:        ${MODEL_SIZE}"
 echo "Flash Attention:   ${USE_FLASH_ATTN}"
+echo "Disable NCCL P2P:  ${DISABLE_NCCL_P2P_IB}"
+echo "Train Config File: ${TRAIN_CONFIG_FILE}"
 echo "Number of GPUs:    ${NUM_GPUS}"
 echo "Batch Size:        ${BATCH_SIZE}"
 echo "Max Seq Length:    ${MAX_SEQ_LENGTH}"
@@ -159,6 +172,19 @@ fi
 # ==============================================================================
 # Run Training
 # ==============================================================================
+
+# Set NCCL environment variables
+# For A100/A6000: explicitly enable P2P and IB to override accelerate's auto-detection
+# For RTX 4000: disable P2P and IB for compatibility
+if [ "$DISABLE_NCCL_P2P_IB" = "true" ]; then
+    echo "Disabling NCCL P2P and IB (RTX 4000 series mode)"
+    export NCCL_P2P_DISABLE=1
+    export NCCL_IB_DISABLE=1
+else
+    echo "Enabling NCCL P2P and IB (A100/A6000 mode)"
+    export NCCL_P2P_DISABLE=0
+    export NCCL_IB_DISABLE=0
+fi
 
 echo "Starting training..."
 echo "Command: ${ACCELERATE_CMD} train.py ${CMD_ARGS}"

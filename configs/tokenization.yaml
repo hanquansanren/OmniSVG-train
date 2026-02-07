@@ -9,8 +9,8 @@ models:
   4B:
     base_vocab_size: 151936
     extended_vocab_size: 197000
-    base_model: "/mnt/jfs-test/Qwen2.5-VL-3B-Instruct"
-    checkpoint: "OmniSVG/OmniSVG1.1_4B"
+    base_model: "/data/phd23_weiguang_zhang/works/svg/qwen25vl3b"
+    checkpoint: "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e"
     
     # Special tokens (computed from base_vocab_size)
     special_tokens:

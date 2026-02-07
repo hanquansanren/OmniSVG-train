@@ -193,6 +193,7 @@ class TrainConfig:
     model_path: str = ""  # Will be set based on model_size
     torch_dtype: str = "bfloat16"
     use_flash_attn: bool = True
+    use_gradient_checkpointing: bool = False
     
     # Data
     data_dir: str = "./data"
@@ -256,6 +257,7 @@ class TrainConfig:
             model_path=defaults['base_model'],
             torch_dtype=model.get('torch_dtype', 'bfloat16'),
             use_flash_attn=model.get('use_flash_attn', True),
+            use_gradient_checkpointing=model.get('use_gradient_checkpointing', False),
             data_dir=data.get('data_dir', './data'),
             target_image_size=data.get('target_image_size', 448),
             text_max_length=data.get('text_max_length', 800),

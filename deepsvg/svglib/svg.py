@@ -550,8 +550,24 @@ class SVG:
 
         # Parse viewBox
         viewbox_str = svg_root.getAttribute("viewBox")
-        viewbox_list = list(map(float, viewbox_str.split(" ")))
-        view_box = Bbox(*viewbox_list)
+        
+        if viewbox_str and viewbox_str.strip():
+            # ViewBox exists, parse it
+            viewbox_list = list(map(float, viewbox_str.split()))
+            view_box = Bbox(*viewbox_list)
+        else:
+            # No viewBox, try to use width and height
+            width_str = svg_root.getAttribute("width")
+            height_str = svg_root.getAttribute("height")
+            
+            if width_str and height_str:
+                # Remove units (px, pt, etc.) and convert to float
+                width = float(''.join(c for c in width_str if c.isdigit() or c == '.'))
+                height = float(''.join(c for c in height_str if c.isdigit() or c == '.'))
+                view_box = Bbox(0, 0, width, height)
+            else:
+                # Default to a standard viewBox
+                view_box = Bbox(0, 0, 200, 200)
 
         # Parse all supported primitives
         for tag, PrimitiveClass in SVG.SUPPORTED_PRIMITIVES.items():

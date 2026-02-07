@@ -20,10 +20,10 @@ data:
   data_dir: "/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
   
   # Reduced image size: 448 -> 336 (saves ~40% image memory)
-  target_image_size: 224
+  target_image_size: 336
   
   # Reduced sequence length: 2048 -> 1536 (saves ~25% sequence memory)
-  max_seq_length: 2048
+  max_seq_length: 1536
   text_max_length: 800
   
   text_source_probabilities:
@@ -34,8 +34,8 @@ data:
 # Training Configuration
 # ==============================================================================
 training:
-  learning_rate: 3.0e-4 # 1.0e-5
-  weight_decay: 0.1 # 0.015
+  learning_rate: 1.0e-5
+  weight_decay: 0.015
   max_grad_norm: 0.8
   
   epochs: 150
@@ -45,18 +45,14 @@ training:
   
   scheduler:
     type: "cosine"
-    warmup_steps: 50 # 50000
+    warmup_steps: 50000
     num_cycles: 0.5
   
   task_balance:
-    initial_text_only_ratio: 0.0
-    # 0.5：平衡训练（推荐）
-    # 0.7：偏重文本理解
-    # 1.0：纯文本到SVG（显存友好）
-    # 0.0：纯图像到SVG（需要大量显存）
+    initial_text_only_ratio: 0.50
   
   loss_weights:
-    text_task: 0 # 1.5
+    text_task: 1.5
     image_task: 1.0
 
 # ==============================================================================

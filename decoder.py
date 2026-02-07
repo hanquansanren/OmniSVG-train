@@ -15,12 +15,14 @@ class SketchDecoder(nn.Module):
     def __init__(self,
                  pix_len,
                  text_len,
-                 model_path="Qwen/Qwen2.5-VL-3B-Instruct", 
+                 model_path="Qwen/Qwen2.5-VL-3B-Instruct",
+                 use_gradient_checkpointing=False,
                  **kwargs):
         super().__init__()
         
         self.pix_len = pix_len
         self.text_len = text_len
+        self.use_gradient_checkpointing = use_gradient_checkpointing
         
         self.vocab_size = 197000
         self.bos_token_id = 196998
@@ -44,11 +46,19 @@ class SketchDecoder(nn.Module):
             config=config,
             torch_dtype=torch.bfloat16,
             #attn_implementation="flash_attention_2", 
-            #device_map ="cuda",
+            device_map="auto",  # 自动分配到 GPU
             ignore_mismatched_sizes=True
         )
 
         self.transformer.resize_token_embeddings(self.vocab_size)
+        
+        # Enable gradient checkpointing if requested
+        if self.use_gradient_checkpointing:
+            print("Enabling gradient checkpointing to save memory...")
+            self.transformer.gradient_checkpointing_enable()
+            # Disable cache when using gradient checkpointing
+            if hasattr(self.transformer.config, 'use_cache'):
+                self.transformer.config.use_cache = False
         
         self.train()
 

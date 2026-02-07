@@ -24,6 +24,7 @@ Usage:
 """
 
 import os
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import argparse
@@ -57,6 +58,7 @@ from utils import (
     download_omnisvg_data,
     list_available_datasets,
 )
+from utils.config import MODEL_DEFAULTS
 from decoder import SketchDecoder
 
 # For Qwen2.5-VL
@@ -68,19 +70,10 @@ except ImportError:
 
 
 # ============================================================================
-# Model Configuration - Define checkpoint mappings
+# Model Configuration
 # ============================================================================
-
-MODEL_DEFAULTS = {
-    "4B": {
-        "base_model": "Qwen/Qwen2.5-VL-3B-Instruct",
-        "checkpoint": "OmniSVG/OmniSVG1.1_4B",
-    },
-    "8B": {
-        "base_model": "Qwen/Qwen2.5-VL-7B-Instruct",
-        "checkpoint": "OmniSVG/OmniSVG1.1_8B",
-    },
-}
+# MODEL_DEFAULTS is now imported from utils.config
+# It reads from tokenization.yaml to support custom model paths
 
 
 # ============================================================================
@@ -248,6 +241,7 @@ def load_model(
     use_flash_attn: bool = True,
     checkpoint_path: Optional[str] = None,
     device_map: str = "auto",
+    **kwargs,
 ) -> nn.Module:
     """
     Load OmniSVG model with appropriate settings.
@@ -266,8 +260,11 @@ def load_model(
     if model_size not in MODEL_DEFAULTS:
         raise ValueError(f"Invalid model_size: {model_size}. Must be one of {list(MODEL_DEFAULTS.keys())}")
     
-    base_model = MODEL_DEFAULTS[model_size]["base_model"]
-    default_checkpoint = MODEL_DEFAULTS[model_size]["checkpoint"]
+    # Load config to get model paths
+    from utils import OmniSVGConfig as _TempConfig
+    temp_config = _TempConfig(model_size=model_size)
+    base_model = temp_config.base_model_path
+    default_checkpoint = temp_config.checkpoint_path
     
     # Set attention implementation
     attn_implementation = "flash_attention_2" if use_flash_attn else "eager"
@@ -280,12 +277,16 @@ def load_model(
     print(f"Max SVG tokens: {pix_len}")
     print(f"Max text length: {text_len}")
     
+    # Get gradient checkpointing setting
+    use_gradient_checkpointing = kwargs.get('use_gradient_checkpointing', False)
+    
     # Initialize model from base
     model = SketchDecoder(
         pix_len=pix_len,
         text_len=text_len,
         model_path=base_model,
         attn_implementation=attn_implementation,
+        use_gradient_checkpointing=use_gradient_checkpointing,
     )
     
     # Load checkpoint if specified
@@ -395,7 +396,8 @@ def create_collate_fn(
         task_assignments = []
         for _ in range(len(text_oris)):
             task_counter["total"] += 1
-            target_text_count = task_counter["total"] // 2
+            # Use text_only_ratio instead of hardcoded 50%
+            target_text_count = int(task_counter["total"] * text_only_ratio)
             
             if task_counter["text"] < target_text_count:
                 task_assignments.append("text")
@@ -645,7 +647,7 @@ def train(args, config: OmniSVGConfig):
     set_seed(config.training.seed)
     
     # Get base model path
-    base_model_path = MODEL_DEFAULTS[config.model_size]["base_model"]
+    base_model_path = config.base_model_path
     accelerator.print(f"Using base model: {base_model_path}")
     accelerator.print(f"Model size: {config.model_size}")
     
@@ -740,6 +742,7 @@ def train(args, config: OmniSVGConfig):
         text_len=config.training.text_max_length,
         use_flash_attn=config.training.use_flash_attn,
         checkpoint_path=args.resume_from_checkpoint if args.resume_from_checkpoint else None,
+        use_gradient_checkpointing=config.training.use_gradient_checkpointing,
     )
     
     # Optimizer
@@ -1118,6 +1121,8 @@ Examples:
     train_group = parser.add_argument_group("Training Configuration")
     train_group.add_argument("--config_dir", type=str, default="./configs",
                             help="Directory containing config files")
+    train_group.add_argument("--train_config_file", type=str, default="train_config.yaml",
+                            help="Training config filename (e.g., train_config.yaml, train_config_low_memory.yaml)")
     train_group.add_argument("--output_dir", type=str, default="./output",
                             help="Output directory for checkpoints and logs")
     train_group.add_argument("--project_name", type=str, default=None,
@@ -1154,6 +1159,7 @@ Examples:
     # Load configuration
     config = OmniSVGConfig(
         config_dir=args.config_dir,
+        train_file=args.train_config_file,
         model_size=args.model_size,
     )
     
@@ -1174,12 +1180,14 @@ Examples:
     print(f"OmniSVG Training Configuration")
     print(f"{'='*60}")
     print(f"Model Size:        {config.model_size}")
-    print(f"Base Model:        {MODEL_DEFAULTS[config.model_size]['base_model']}")
-    print(f"Default Checkpoint:{MODEL_DEFAULTS[config.model_size]['checkpoint']}")
+    print(f"Base Model:        {config.base_model_path}")
+    print(f"Default Checkpoint:{config.checkpoint_path}")
     print(f"Flash Attention:   {config.training.use_flash_attn}")
+    print(f"Gradient Checkpoint:{config.training.use_gradient_checkpointing}")
     print(f"Data Directory:    {config.training.data_dir}")
     print(f"Max Seq Length:    {config.training.max_seq_length}")
     print(f"Batch Size:        {args.batch_size}")
+    print(f"Grad Accum Steps:  {config.training.gradient_accumulation_steps}")
     print(f"Output Directory:  {args.output_dir}/{args.project_name}")
     if args.resume_from_checkpoint:
         print(f"Resume From:       {args.resume_from_checkpoint}")

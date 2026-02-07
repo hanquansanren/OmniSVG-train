@@ -1,0 +1,20 @@
+{
+  "model_size": "4B",
+  "use_flash_attn": true,
+  "no_flash_attn": false,
+  "data_dir": "/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample",
+  "use_hf_data": false,
+  "datasets": [
+    "illustration",
+    "icon"
+  ],
+  "config_dir": "./configs",
+  "train_config_file": "train_config.yaml",
+  "output_dir": "./output",
+  "project_name": "omnisvg_4b_20260208_033819",
+  "batch_size": 1,
+  "max_seq_length": 2048,
+  "resume_from_checkpoint": null,
+  "list_datasets": false,
+  "list_models": false
+}

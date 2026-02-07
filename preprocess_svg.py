@@ -11,22 +11,30 @@ from deepsvg.svglib.svg import SVG
 from deepsvg.svglib.geom import Bbox
 
 
-def preprocess_svg(input_path: str, output_path: str) -> bool:
+def preprocess_svg(input_path: str, output_path: str, timeout: int = 30) -> bool:
     """
     Simplify SVG syntax using picosvg, removing groups and transforms.
     
     Args:
         input_path: Path to input SVG file
         output_path: Path to save preprocessed SVG
+        timeout: Timeout in seconds for picosvg (default: 30)
         
     Returns:
         True if successful, False otherwise
     """
     try:
         with open(output_path, "w") as output_file:
-            subprocess.run(["picosvg", input_path], stdout=output_file, check=True)
-        print(f"Preprocessed SVG saved to {output_path}")
+            subprocess.run(
+                ["picosvg", input_path], 
+                stdout=output_file, 
+                check=True,
+                timeout=timeout
+            )
         return True
+    except subprocess.TimeoutExpired:
+        print(f"Timeout preprocessing {input_path} (exceeded {timeout}s)")
+        return False
     except subprocess.CalledProcessError as e:
         print(f"Error preprocessing {input_path}: {e}")
         return False
@@ -72,7 +80,9 @@ def process_single_file(
     width: int,
     height: int,
     simplify: bool,
-    max_dist: int
+    max_dist: int,
+    timeout: int = 30,
+    skip_picosvg: bool = False
 ) -> bool:
     """
     Process a single SVG file.
@@ -85,6 +95,8 @@ def process_single_file(
         height: Target height
         simplify: Whether to simplify paths
         max_dist: Maximum distance for path splitting
+        timeout: Timeout for picosvg preprocessing (default: 30)
+        skip_picosvg: Skip picosvg preprocessing and load directly (default: False)
         
     Returns:
         True if successful, False otherwise
@@ -93,28 +105,46 @@ def process_single_file(
         # Ensure output directory exists
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         
-        # Preprocess with picosvg
-        if not preprocess_svg(input_path, output_path):
-            print(f"Skipping {input_path}: preprocessing failed")
-            return False
+        if not skip_picosvg:
+            # Preprocess with picosvg
+            if not preprocess_svg(input_path, output_path, timeout=timeout):
+                return False
 
-        # Check if output file is empty
-        if os.path.getsize(output_path) == 0:
-            print(f"Skipping {output_path}: file is empty")
-            os.remove(output_path)
-            return False
+            # Check if output file is empty
+            if os.path.getsize(output_path) == 0:
+                print(f"Skipping {input_path}: preprocessed file is empty")
+                os.remove(output_path)
+                return False
+            
+            load_path = output_path
+        else:
+            # Skip picosvg, load directly from input
+            load_path = input_path
 
         # Load and process SVG
-        svg = SVG.load_svg(output_path)
-        svg = process_svg(svg, scale, width, height, simplify=simplify, max_dist=max_dist)
+        try:
+            svg = SVG.load_svg(load_path)
+        except Exception as e:
+            print(f"Error loading SVG {load_path}: {e}")
+            if not skip_picosvg and os.path.exists(output_path):
+                os.remove(output_path)
+            return False
+            
+        try:
+            svg = process_svg(svg, scale, width, height, simplify=simplify, max_dist=max_dist)
+        except Exception as e:
+            print(f"Error processing SVG {input_path}: {e}")
+            if os.path.exists(output_path):
+                os.remove(output_path)
+            return False
 
         # Save processed SVG
         svg.save_svg(output_path)
-        print(f"Saved processed SVG to {output_path}")
+        print(f"✓ Successfully processed: {os.path.basename(input_path)}")
         return True
 
     except Exception as e:
-        print(f"Error processing {input_path}: {e}")
+        print(f"Unexpected error processing {input_path}: {e}")
         if os.path.exists(output_path):
             os.remove(output_path)
         return False
@@ -127,7 +157,9 @@ def process_directory(
     width: int,
     height: int,
     simplify: bool,
-    max_dist: int
+    max_dist: int,
+    timeout: int = 30,
+    skip_picosvg: bool = False
 ) -> tuple:
     """
     Process all SVG files in a directory.
@@ -140,6 +172,8 @@ def process_directory(
         height: Target height
         simplify: Whether to simplify paths
         max_dist: Maximum distance for path splitting
+        timeout: Timeout for picosvg preprocessing (default: 30)
+        skip_picosvg: Skip picosvg preprocessing and load directly (default: False)
         
     Returns:
         Tuple of (success_count, failure_count)
@@ -149,22 +183,33 @@ def process_directory(
     success_count = 0
     failure_count = 0
     
+    # Collect all SVG files first
+    svg_files = []
     for root, _, files in os.walk(input_dir):
         for filename in files:
-            if not filename.endswith(".svg"):
-                continue
-                
-            input_path = os.path.join(root, filename)
-            relative_path = os.path.relpath(input_path, input_dir)
-            output_path = os.path.join(output_dir, relative_path)
-            
-            if process_single_file(
-                input_path, output_path,
-                scale, width, height, simplify, max_dist
-            ):
-                success_count += 1
-            else:
-                failure_count += 1
+            if filename.endswith(".svg"):
+                svg_files.append(os.path.join(root, filename))
+    
+    total_files = len(svg_files)
+    print(f"Found {total_files} SVG files to process")
+    if skip_picosvg:
+        print("Mode: Direct loading (skipping picosvg)\n")
+    else:
+        print(f"Mode: With picosvg preprocessing (timeout: {timeout}s)\n")
+    
+    for idx, input_path in enumerate(svg_files, 1):
+        relative_path = os.path.relpath(input_path, input_dir)
+        output_path = os.path.join(output_dir, relative_path)
+        
+        print(f"[{idx}/{total_files}] Processing: {os.path.basename(input_path)}")
+        
+        if process_single_file(
+            input_path, output_path,
+            scale, width, height, simplify, max_dist, timeout, skip_picosvg
+        ):
+            success_count += 1
+        else:
+            failure_count += 1
     
     return success_count, failure_count
 
@@ -176,13 +221,16 @@ def main():
         epilog="""
 Examples:
   # Process single file
-  python process_svg.py --input file.svg --output processed.svg
+  python preprocess_svg.py --input file.svg --output processed.svg
   
-  # Process directory
-  python process_svg.py --input_dir ./svgs --output_dir ./output
+  # Process directory (with picosvg)
+  python preprocess_svg.py --input_dir ./svgs --output_dir ./output
+  
+  # Process directory (skip picosvg, for already simplified SVGs)
+  python preprocess_svg.py --input_dir ./svgs --output_dir ./output --skip_picosvg
   
   # Process with simplification
-  python process_svg.py --input_dir ./svgs --output_dir ./output --simplify
+  python preprocess_svg.py --input_dir ./svgs --output_dir ./output --simplify
         """
     )
     
@@ -238,6 +286,17 @@ Examples:
         action="store_true",
         help="Enable path simplification"
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=30,
+        help="Timeout for picosvg in seconds (default: 30)"
+    )
+    parser.add_argument(
+        "--skip_picosvg",
+        action="store_true",
+        help="Skip picosvg preprocessing (for already simplified SVGs like font glyphs)"
+    )
 
     args = parser.parse_args()
 
@@ -260,7 +319,7 @@ Examples:
         success = process_single_file(
             args.input, args.output,
             args.scale, args.width, args.height,
-            args.simplify, args.max_dist
+            args.simplify, args.max_dist, args.timeout, args.skip_picosvg
         )
         
         if success:
@@ -277,7 +336,7 @@ Examples:
         success, failure = process_directory(
             args.input_dir, args.output_dir,
             args.scale, args.width, args.height,
-            args.simplify, args.max_dist
+            args.simplify, args.max_dist, args.timeout, args.skip_picosvg
         )
         
         print(f"\nBatch processing complete:")
