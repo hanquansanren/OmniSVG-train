@@ -73,7 +73,7 @@ TRAIN_CONFIG_FILE="train_config_zhuan.yaml"
 
 # Accelerate config file (for DeepSpeed, FSDP, etc.)
 # Leave empty for default settings 多卡训练时需要配置
-ACCELERATE_CONFIG="" 
+ACCELERATE_CONFIG="configs/zero_stage2.yaml" 
 
 # Mixed precision training
 MIXED_PRECISION="bf16"
