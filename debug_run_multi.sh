@@ -21,10 +21,10 @@ USE_FLASH_ATTN="true"
 DISABLE_NCCL_P2P_IB="true" 
 
 # Number of GPUs to use
-NUM_GPUS=1
+NUM_GPUS=4
 
 # Batch size per GPU
-BATCH_SIZE=1
+BATCH_SIZE=2
 
 # Maximum SVG sequence length
 # MAX_SEQ_LENGTH=2048

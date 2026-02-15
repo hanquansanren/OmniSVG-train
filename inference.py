@@ -1,6 +1,6 @@
 import torch
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 from PIL import Image
 import cairosvg
 import io
@@ -21,7 +21,7 @@ from qwen_vl_utils import process_vision_info
 from tokenizer import SVGTokenizer
 
 # Load config
-CONFIG_PATH = './config.yaml'
+CONFIG_PATH = './config_zhuan.yaml'
 with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
@@ -196,7 +196,9 @@ def parse_args():
                         help=f'Model size to use (default: {DEFAULT_MODEL_SIZE})')
     parser.add_argument('--model-path', type=str, default="/data/phd23_weiguang_zhang/works/svg/qwen25vl3b",
                         help='Local path or HuggingFace repo ID for Qwen model (overrides config)')
-    parser.add_argument('--weight-path', type=str, default="/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e",
+    parser.add_argument('--weight-path', type=str, default="output/omnisvg_4b_20260210_022748/step_3000",
+    # "output/omnisvg_4b_20260210_022748/step_27000/pytorch_model.bin",
+    # "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e",
                         help='Local path or HuggingFace repo ID for OmniSVG weights (overrides config)')
     
     # Generation parameters
@@ -220,6 +222,10 @@ def parse_args():
                         help='Do not replace background')
     
     # Output options
+    parser.add_argument('--save-svg', action='store_true', default=True,
+                        help='Save SVG code files (default: True)')
+    parser.add_argument('--no-save-svg', action='store_false', dest='save_svg',
+                        help='Do not save SVG code files')
     parser.add_argument('--save-png', action='store_true', default=False,
                         help='Also save rendered PNG images')
     parser.add_argument('--save-all-candidates', action='store_true', default=False,
@@ -287,7 +293,8 @@ def load_models(model_size: str, weight_path: str = None, model_path: str = None
     processor = AutoProcessor.from_pretrained(
         model_path, 
         padding_side="left",
-        trust_remote_code=True
+        trust_remote_code=True,
+        use_fast=True
     )
     processor.tokenizer.padding_side = "left"
     print("Tokenizer and processor loaded successfully!")
@@ -666,7 +673,7 @@ def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, r
     return all_candidates
 
 
-def save_results(candidates, output_dir, base_name, save_png=False, save_all=False):
+def save_results(candidates, output_dir, base_name, save_svg=True, save_png=False, save_all=False):
     """Save generated SVG(s) and optionally PNG(s)"""
     os.makedirs(output_dir, exist_ok=True)
     saved_files = []
@@ -676,10 +683,11 @@ def save_results(candidates, output_dir, base_name, save_png=False, save_all=Fal
     
     if save_all:
         for i, cand in enumerate(candidates):
-            svg_path = os.path.join(output_dir, f"{base_name}_candidate_{i+1}.svg")
-            with open(svg_path, 'w', encoding='utf-8') as f:
-                f.write(cand['svg'])
-            saved_files.append(svg_path)
+            if save_svg:
+                svg_path = os.path.join(output_dir, f"{base_name}_candidate_{i+1}.svg")
+                with open(svg_path, 'w', encoding='utf-8') as f:
+                    f.write(cand['svg'])
+                saved_files.append(svg_path)
             
             if save_png and cand['img'] is not None:
                 png_path = os.path.join(output_dir, f"{base_name}_candidate_{i+1}.png")
@@ -688,10 +696,11 @@ def save_results(candidates, output_dir, base_name, save_png=False, save_all=Fal
     else:
         # Save only the best (first valid) candidate
         best = candidates[0]
-        svg_path = os.path.join(output_dir, f"{base_name}.svg")
-        with open(svg_path, 'w', encoding='utf-8') as f:
-            f.write(best['svg'])
-        saved_files.append(svg_path)
+        if save_svg:
+            svg_path = os.path.join(output_dir, f"{base_name}.svg")
+            with open(svg_path, 'w', encoding='utf-8') as f:
+                f.write(best['svg'])
+            saved_files.append(svg_path)
         
         if save_png and best['img'] is not None:
             png_path = os.path.join(output_dir, f"{base_name}.png")
@@ -767,7 +776,7 @@ def process_text_to_svg(args):
             safe_name = f"{idx+1:04d}_{safe_name}"
             
             saved = save_results(candidates, args.output, safe_name, 
-                               save_png=args.save_png, save_all=args.save_all_candidates)
+                               save_svg=args.save_svg, save_png=args.save_png, save_all=args.save_all_candidates)
             
             print(f"  ✓ Generated {len(candidates)} candidates in {elapsed:.2f}s")
             print(f"  Saved: {', '.join(os.path.basename(f) for f in saved)}")

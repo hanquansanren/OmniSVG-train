@@ -656,7 +656,7 @@ def train(args, config: OmniSVGConfig):
         base_model_path, padding_side="left"
     )
     processor = AutoProcessor.from_pretrained(
-        base_model_path, padding_side="left"
+        base_model_path, padding_side="left", use_fast=True
     )
     processor.tokenizer.padding_side = "left"
     
@@ -756,13 +756,16 @@ def train(args, config: OmniSVGConfig):
     )
     
     # Scheduler
-    total_steps = len(train_dataloader) * config.training.epochs
+    # Use optimizer steps (after gradient accumulation), not raw batch steps
+    num_update_steps_per_epoch = len(train_dataloader) // config.training.gradient_accumulation_steps
+    total_steps = num_update_steps_per_epoch * config.training.epochs
     lr_scheduler = get_cosine_schedule_with_warmup(
         optimizer,
         num_warmup_steps=config.training.warmup_steps,
         num_training_steps=total_steps,
         num_cycles=0.5,
     )
+    accelerator.print(f"Scheduler: {total_steps} total optimizer steps, {config.training.warmup_steps} warmup steps")
     
     # Prepare for distributed training
     model, optimizer, lr_scheduler, train_dataloader, val_dataloader = accelerator.prepare(
@@ -788,7 +791,6 @@ def train(args, config: OmniSVGConfig):
     
     # Training loop
     accelerator.print("Starting training...")
-    num_update_steps_per_epoch = len(train_dataloader) // config.training.gradient_accumulation_steps
     
     text_losses = []
     image_losses = []
@@ -977,7 +979,7 @@ def validate(
     
     if accelerator.is_main_process:
         writer.add_scalar("validation/total_loss", avg_total, step)
-        writer.add_scalar("validation/text_loss", avg_text, step)
+        # writer.add_scalar("validation/text_loss", avg_text, step)
         writer.add_scalar("validation/image_loss", avg_image, step)
     
     return avg_total
@@ -1002,7 +1004,7 @@ def log_metrics(
     avg_grad = np.mean(grad_norms) if grad_norms else 0
     
     writer.add_scalar("loss/total", avg_total, step)
-    writer.add_scalar("loss/text_task", avg_text, step)
+    # writer.add_scalar("loss/text_task", avg_text, step)
     writer.add_scalar("loss/image_task", avg_image, step)
     writer.add_scalar("lr", lr_scheduler.get_last_lr()[0], step)
     writer.add_scalar("grad_norm", avg_grad, step)
@@ -1108,8 +1110,8 @@ Examples:
     
     # Data configuration
     data_group = parser.add_argument_group("Data Configuration")
-    data_group.add_argument("--data_dir", type=str, default="./data",
-                           help="Data directory containing train_meta.csv, val_meta.csv, svg/, png/")
+    data_group.add_argument("--data_dir", type=str, default=None,
+                           help="Data directory containing train_meta.csv, val_meta.csv, svg/, png/ (overrides config file)")
     data_group.add_argument("--use_hf_data", action="store_true",
                            help="Download and use HuggingFace datasets")
     data_group.add_argument("--datasets", type=str, nargs="+",

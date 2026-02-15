@@ -256,11 +256,14 @@ class OmniSVGDataset(Dataset):
         # Load metadata
         self.meta_df = self._load_meta_file(meta_file)
         
-        # Filter by token length
-        self.meta_df = self.meta_df[
-            (0 < self.meta_df['len_pix']) & 
-            (self.meta_df['len_pix'] <= self.max_len)
-        ]
+        # Filter by token length (only if len_pix column exists)
+        if 'len_pix' in self.meta_df.columns:
+            self.meta_df = self.meta_df[
+                (0 < self.meta_df['len_pix']) & 
+                (self.meta_df['len_pix'] <= self.max_len)
+            ]
+        else:
+            print("Warning: 'len_pix' column not found in metadata, skipping token length filtering")
         
         # Build file indices for fast lookup
         if svg_folder:
@@ -318,7 +321,7 @@ class OmniSVGDataset(Dataset):
             if self.data_source == "huggingface":
                 token_len = self.hf_dataset[i]['token_len']
             else:
-                token_len = self.meta_df.iloc[i]['len_pix']
+                token_len = self.meta_df.iloc[i]['len_pix'] if 'len_pix' in self.meta_df.columns else self.max_len // 2
             
             # Find duplication factor
             factor = 1.0

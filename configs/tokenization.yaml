@@ -10,7 +10,7 @@ models:
     base_vocab_size: 151936
     extended_vocab_size: 197000
     base_model: "/data/phd23_weiguang_zhang/works/svg/qwen25vl3b"
-    checkpoint: "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e"
+    checkpoint: "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
     
     # Special tokens (computed from base_vocab_size)
     special_tokens:

@@ -17,13 +17,13 @@ model:
 # Data Configuration  
 # ==============================================================================
 data:
-  data_dir: "/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
+  data_dir: "/data/phd23_weiguang_zhang/works/svg/my_zhuan"
   
   # Reduced image size: 448 -> 336 (saves ~40% image memory)
-  target_image_size: 336
+  target_image_size: 224
   
   # Reduced sequence length: 2048 -> 1536 (saves ~25% sequence memory)
-  max_seq_length: 1536
+  max_seq_length: 2048
   text_max_length: 800
   
   text_source_probabilities:
@@ -34,34 +34,38 @@ data:
 # Training Configuration
 # ==============================================================================
 training:
-  learning_rate: 1.0e-5
-  weight_decay: 0.015
-  max_grad_norm: 0.8
+  learning_rate: 1e-4 # 1.0e-5
+  weight_decay: 0.05 # 0.015
+  max_grad_norm: 1.0 # 0.8
   
-  epochs: 150
+  epochs: 10
   # Increased gradient accumulation: 4 -> 8
   # This maintains effective batch size while using less memory per step
-  gradient_accumulation_steps: 8
+  gradient_accumulation_steps: 4
   
   scheduler:
     type: "cosine"
-    warmup_steps: 50000
+    warmup_steps: 500 # 50000
     num_cycles: 0.5
   
   task_balance:
-    initial_text_only_ratio: 0.50
+    initial_text_only_ratio: 0.0
+    # 0.5：平衡训练（推荐）
+    # 0.7：偏重文本理解
+    # 1.0：纯文本到SVG（显存友好）
+    # 0.0：纯图像到SVG（需要大量显存）
   
   loss_weights:
-    text_task: 1.5
+    text_task: 0 # 1.5
     image_task: 1.0
 
 # ==============================================================================
 # Logging and Checkpointing
 # ==============================================================================
 logging:
-  log_every: 10
-  save_every: 3000
-  val_every: 5000
+  log_every: 15 # 10
+  save_every: 2000 # 3000
+  val_every: 1000 # 5000
 
 # ==============================================================================
 # DataLoader Configuration
