@@ -1,0 +1,93 @@
+# FSDP Configuration - 低显存优化版本
+# 适用于显存紧张的情况（例如 GPU 显存 < 16GB）
+
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+
+fsdp_config:
+  # 基于Transformer层的包裹策略
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  
+  # Qwen2.5-VL的层类名
+  fsdp_transformer_layer_cls_to_wrap: Qwen2_5_VLDecoderLayer
+  
+  # 完全分片策略（最省显存）
+  fsdp_sharding_strategy: FULL_SHARD
+  
+  # 反向传播预取
+  fsdp_backward_prefetch: BACKWARD_PRE
+  fsdp_forward_prefetch: false
+  
+  # 状态字典类型
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_sync_module_states: true
+  fsdp_use_orig_params: true
+  
+  # CPU高效加载
+  fsdp_cpu_ram_efficient_loading: true
+  
+  # ⭐ 关键优化1: 参数卸载到CPU
+  # 将不使用的参数卸载到CPU，可节省约40-50%显存
+  # 代价：训练速度降低约20-30%
+  fsdp_offload_params: true
+  
+  # ⭐ 关键优化2: FSDP原生的Activation Checkpointing
+  # 节省约30-40%激活值显存
+  # 代价：反向传播时需要重新计算，速度降低约15-20%
+  fsdp_activation_checkpointing: true
+
+# 混合精度训练
+mixed_precision: bf16
+downcast_bf16: 'no'
+
+# GPU设置
+num_processes: 4
+gpu_ids: all
+use_cpu: false
+
+# 单机训练
+num_machines: 1
+machine_rank: 0
+main_process_ip: null
+main_process_port: null
+
+# 主训练函数名
+main_training_function: main
+
+# 分布式后端
+rdzv_backend: static
+same_network: true
+
+# TPU设置（不使用）
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+
+# ==============================================================================
+# 显存优化说明
+# ==============================================================================
+# 
+# 此配置启用了两大显存优化：
+# 
+# 1. fsdp_offload_params: true
+#    - 将模型参数卸载到CPU内存
+#    - 只在需要时加载到GPU
+#    - 显存节省：约40-50%
+#    - 速度影响：-20-30%
+# 
+# 2. fsdp_activation_checkpointing: true
+#    - 不保存所有中间激活值
+#    - 反向传播时重新计算
+#    - 显存节省：约30-40%
+#    - 速度影响：-15-20%
+# 
+# 总体效果：
+# - 显存占用降低约60-70%
+# - 训练速度降低约30-40%
+# - 适用于显存 < 16GB 的GPU
+# 
+# 如果显存仍然不足，可以进一步：
+# - 降低 batch_size（在 debug_run_multi.sh 中设置）
+# - 降低 max_seq_length（在 train_config_zhuan.yaml 中设置）
+# 
+# ==============================================================================

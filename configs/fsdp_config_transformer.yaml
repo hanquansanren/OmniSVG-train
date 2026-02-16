@@ -1,0 +1,41 @@
+# FSDP Configuration - Transformer Based Wrap (备选方案)
+# 如果 SIZE_BASED_WRAP 不工作，可以尝试这个配置
+
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+
+fsdp_config:
+  # 基于Transformer层的包裹策略
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  
+  # Qwen2.5-VL的正确层类名（已验证）
+  fsdp_transformer_layer_cls_to_wrap: Qwen2_5_VLDecoderLayer
+  
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_backward_prefetch: BACKWARD_PRE
+  fsdp_forward_prefetch: false
+  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_sync_module_states: true
+  fsdp_use_orig_params: true
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_offload_params: false
+  
+  # FSDP原生的Activation Checkpointing（替代模型自带的gradient checkpointing）
+  # 这样可以避免与FSDP包裹机制的冲突
+  fsdp_activation_checkpointing: true
+
+mixed_precision: bf16
+downcast_bf16: 'no'
+num_processes: 4
+gpu_ids: all
+use_cpu: false
+num_machines: 1
+machine_rank: 0
+main_process_ip: null
+main_process_port: null
+main_training_function: main
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false

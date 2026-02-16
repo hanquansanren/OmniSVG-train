@@ -48,6 +48,14 @@ from transformers import (
 from accelerate import Accelerator
 from safetensors.torch import load_file
 
+# Weights & Biases for cloud visualization
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+    print("Warning: wandb not installed. Install with: pip install wandb")
+
 # Local imports
 from utils import (
     OmniSVGConfig,
@@ -281,12 +289,14 @@ def load_model(
     use_gradient_checkpointing = kwargs.get('use_gradient_checkpointing', False)
     
     # Initialize model from base
+    # Note: device_map is passed from train() function, will be None for distributed training
     model = SketchDecoder(
         pix_len=pix_len,
         text_len=text_len,
         model_path=base_model,
         attn_implementation=attn_implementation,
         use_gradient_checkpointing=use_gradient_checkpointing,
+        device_map=device_map,  # 分布式训练时为None，单GPU时可为"auto"
     )
     
     # Load checkpoint if specified
@@ -736,6 +746,7 @@ def train(args, config: OmniSVGConfig):
     )
     
     # Initialize model
+    # Important: device_map=None for distributed training (let Accelerate manage devices)
     model = load_model(
         model_size=config.model_size,
         pix_len=config.training.max_seq_length,
@@ -743,6 +754,7 @@ def train(args, config: OmniSVGConfig):
         use_flash_attn=config.training.use_flash_attn,
         checkpoint_path=args.resume_from_checkpoint if args.resume_from_checkpoint else None,
         use_gradient_checkpointing=config.training.use_gradient_checkpointing,
+        device_map=None,  # 关键：分布式训练时必须为None
     )
     
     # Optimizer
@@ -778,6 +790,36 @@ def train(args, config: OmniSVGConfig):
     
     writer = SummaryWriter(log_dir=str(output_dir / "logs"))
     
+    # Initialize Weights & Biases (只在主进程)
+    use_wandb = WANDB_AVAILABLE and args.use_wandb and accelerator.is_main_process
+    if use_wandb:
+        # 准备wandb配置
+        wandb_config = {
+            "model_size": config.model_size,
+            "batch_size": args.batch_size,
+            "num_gpus": accelerator.num_processes,
+            "learning_rate": config.training.learning_rate,
+            "epochs": config.training.epochs,
+            "max_seq_length": config.training.max_seq_length,
+            "gradient_accumulation_steps": config.training.gradient_accumulation_steps,
+            "use_flash_attn": config.training.use_flash_attn,
+            "use_gradient_checkpointing": config.training.use_gradient_checkpointing,
+            "text_loss_weight": config.training.text_loss_weight,
+            "image_loss_weight": config.training.image_loss_weight,
+        }
+        
+        # 初始化wandb
+        wandb.init(
+            project=args.wandb_project or "omnisvg-training",
+            name=args.project_name,
+            config=wandb_config,
+            dir=str(output_dir),
+            resume="allow" if args.resume_from_checkpoint else False,
+        )
+        
+        print(f"\n✅ Weights & Biases initialized!")
+        print(f"📊 View training at: {wandb.run.get_url()}\n")
+    
     # Save config
     if accelerator.is_main_process:
         config.save(str(output_dir / "config.yaml"))
@@ -790,7 +832,19 @@ def train(args, config: OmniSVGConfig):
     best_val_loss = float('inf')
     
     # Training loop
-    accelerator.print("Starting training...")
+    print(f"\n{'='*60}")
+    print(f"🚀 Starting Training")
+    print(f"{'='*60}")
+    print(f"Total Epochs:     {config.training.epochs}")
+    print(f"Steps per Epoch:  {num_update_steps_per_epoch}")
+    print(f"Total Steps:      {total_steps}")
+    print(f"Batch Size:       {args.batch_size} per GPU × {accelerator.num_processes} GPUs")
+    print(f"Grad Accum:       {config.training.gradient_accumulation_steps}")
+    print(f"Learning Rate:    {lr:.2e}")
+    print(f"Log Every:        {config.training.log_every} steps")
+    print(f"Save Every:       {config.training.save_every} steps")
+    print(f"Validate Every:   {config.training.val_every} steps")
+    print(f"{'='*60}\n")
     
     text_losses = []
     image_losses = []
@@ -798,6 +852,10 @@ def train(args, config: OmniSVGConfig):
     
     for epoch in range(starting_epoch, config.training.epochs):
         model.train()
+        print(f"\n{'='*60}")
+        print(f"📚 Epoch {epoch + 1}/{config.training.epochs}")
+        print(f"{'='*60}\n")
+        
         progress_bar = tqdm(
             total=num_update_steps_per_epoch,
             disable=not accelerator.is_local_main_process,
@@ -838,6 +896,7 @@ def train(args, config: OmniSVGConfig):
                        config.training.image_loss_weight * image_loss)
                 
                 # Track losses
+                current_loss = loss.item()
                 if text_loss.item() > 0:
                     text_losses.append(text_loss.item())
                 if image_loss.item() > 0:
@@ -859,13 +918,19 @@ def train(args, config: OmniSVGConfig):
                     optimizer.zero_grad()
                     
                     global_step += 1
+                    
+                    # 更新progress bar，显示当前loss
+                    progress_bar.set_postfix({
+                        'loss': f'{current_loss:.4f}',
+                        'step': global_step
+                    })
                     progress_bar.update(1)
                     
                     # Logging
                     if global_step % config.training.log_every == 0:
                         log_metrics(
                             writer, global_step, text_losses, image_losses, 
-                            grad_norms, lr_scheduler, accelerator
+                            grad_norms, lr_scheduler, accelerator, use_wandb
                         )
                         text_losses = []
                         image_losses = []
@@ -908,8 +973,18 @@ def train(args, config: OmniSVGConfig):
     # Cleanup
     if accelerator.is_main_process:
         writer.close()
+        
+        # Finish wandb run
+        if use_wandb and WANDB_AVAILABLE:
+            wandb.finish()
     
-    accelerator.print("Training complete!")
+    print(f"\n{'='*60}")
+    print(f"✅ Training Complete!")
+    print(f"{'='*60}")
+    print(f"Final Step:       {global_step}")
+    print(f"Best Val Loss:    {best_val_loss:.4f}")
+    print(f"Checkpoints:      {output_dir}")
+    print(f"{'='*60}\n")
 
 
 def validate(
@@ -975,12 +1050,27 @@ def validate(
     avg_text = np.mean(text_losses) if text_losses else 0
     avg_image = np.mean(image_losses) if image_losses else 0
     
-    accelerator.print(f"Validation - Total: {avg_total:.4f}, Text: {avg_text:.4f}, Image: {avg_image:.4f}")
+    # 打印验证结果
+    print(f"\n{'='*60}")
+    print(f"[Validation @ Step {step}]")
+    print(f"  Total Loss:  {avg_total:.4f}")
+    print(f"  Image Loss:  {avg_image:.4f}")
+    print(f"  Text Loss:   {avg_text:.4f}")
+    print(f"{'='*60}\n")
     
     if accelerator.is_main_process:
+        # TensorBoard logging
         writer.add_scalar("validation/total_loss", avg_total, step)
         # writer.add_scalar("validation/text_loss", avg_text, step)
         writer.add_scalar("validation/image_loss", avg_image, step)
+        
+        # Weights & Biases logging
+        if WANDB_AVAILABLE and wandb.run is not None:
+            wandb.log({
+                "val/loss_total": avg_total,
+                "val/loss_image": avg_image,
+                "val/loss_text": avg_text,
+            }, step=step)
     
     return avg_total
 
@@ -993,8 +1083,9 @@ def log_metrics(
     grad_norms: List[float],
     lr_scheduler: Any,
     accelerator: Accelerator,
+    use_wandb: bool = False,
 ):
-    """Log training metrics."""
+    """Log training metrics to TensorBoard and Weights & Biases."""
     if not accelerator.is_main_process:
         return
     
@@ -1002,12 +1093,28 @@ def log_metrics(
     avg_image = np.mean(image_losses) if image_losses else 0
     avg_total = np.mean(text_losses + image_losses) if (text_losses + image_losses) else 0
     avg_grad = np.mean(grad_norms) if grad_norms else 0
+    current_lr = lr_scheduler.get_last_lr()[0]
     
+    # 打印训练指标到控制台
+    print(f"\n[Step {step}] Loss: {avg_total:.4f} (Image: {avg_image:.4f}, Text: {avg_text:.4f}) | "
+          f"Grad Norm: {avg_grad:.4f} | LR: {current_lr:.2e}")
+    
+    # TensorBoard logging
     writer.add_scalar("loss/total", avg_total, step)
     # writer.add_scalar("loss/text_task", avg_text, step)
     writer.add_scalar("loss/image_task", avg_image, step)
-    writer.add_scalar("lr", lr_scheduler.get_last_lr()[0], step)
+    writer.add_scalar("lr", current_lr, step)
     writer.add_scalar("grad_norm", avg_grad, step)
+    
+    # Weights & Biases logging
+    if use_wandb and WANDB_AVAILABLE:
+        wandb.log({
+            "train/loss_total": avg_total,
+            "train/loss_image": avg_image,
+            "train/loss_text": avg_text,
+            "train/learning_rate": current_lr,
+            "train/grad_norm": avg_grad,
+        }, step=step)
 
 
 def save_checkpoint(
@@ -1135,6 +1242,13 @@ Examples:
                             help="Maximum SVG sequence length")
     train_group.add_argument("--resume_from_checkpoint", type=str, default=None,
                             help="Path to checkpoint, HuggingFace repo ID (e.g., OmniSVG/OmniSVG1.1_4B), or 'auto'")
+    
+    # Logging options
+    logging_group = parser.add_argument_group("Logging Configuration")
+    logging_group.add_argument("--use_wandb", action="store_true",
+                              help="Enable Weights & Biases for cloud visualization")
+    logging_group.add_argument("--wandb_project", type=str, default=None,
+                              help="Weights & Biases project name (default: omnisvg-training)")
     
     # Utility options
     parser.add_argument("--list_datasets", action="store_true",

@@ -1,0 +1,58 @@
+# DDP (Distributed Data Parallel) Configuration
+# 最简单、最稳定的多GPU训练方案
+# 适用于显存充足的情况（4B模型 + 4张GPU应该够用）
+
+compute_environment: LOCAL_MACHINE
+
+# 使用标准的DDP（PyTorch原生，最稳定）
+distributed_type: MULTI_GPU
+
+# 混合精度训练
+mixed_precision: bf16
+downcast_bf16: 'no'
+
+# GPU设置
+num_processes: 4        # 4张GPU
+gpu_ids: all
+use_cpu: false
+
+# 单机训练
+num_machines: 1
+machine_rank: 0
+main_process_ip: null
+main_process_port: null
+
+# 主训练函数名
+main_training_function: main
+
+# 分布式后端
+rdzv_backend: static
+same_network: true
+
+# TPU设置（不使用）
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+
+# ==============================================================================
+# 说明
+# ==============================================================================
+# DDP vs FSDP vs DeepSpeed:
+# 
+# DDP (此配置):
+#   - 优点：最简单、最稳定、兼容性最好
+#   - 缺点：每张GPU都保存完整模型副本（显存占用较高）
+#   - 适用：显存充足时（推荐用于4B模型+4张GPU）
+# 
+# FSDP:
+#   - 优点：显存效率高，参数分片
+#   - 缺点：配置相对复杂，可能需要调整
+#   - 适用：显存紧张或超大模型
+# 
+# DeepSpeed:
+#   - 优点：功能最强大，高度优化
+#   - 缺点：与PyTorch 2.5.0有兼容性问题
+#   - 适用：需要降级PyTorch或等待更新
+# 
+# 如果当前配置显存不足，请切换回 fsdp_config.yaml
+# ==============================================================================

@@ -58,6 +58,17 @@ USE_HF_DATA="false"
 HF_DATASETS="illustration icon"
 
 # ==============================================================================
+# Logging Configuration
+# ==============================================================================
+
+# Enable Weights & Biases for cloud visualization
+# Set to "true" to enable remote access to training metrics
+USE_WANDB="true"
+
+# Weights & Biases project name (optional, defaults to "omnisvg-training")
+WANDB_PROJECT="omnisvg-training"
+
+# ==============================================================================
 # Advanced Configuration
 # ==============================================================================
 
@@ -73,7 +84,10 @@ TRAIN_CONFIG_FILE="train_config_zhuan.yaml"
 
 # Accelerate config file (for DeepSpeed, FSDP, etc.)
 # Leave empty for default settings 多卡训练时需要配置
-ACCELERATE_CONFIG="configs/zero_stage2.yaml" 
+# ACCELERATE_CONFIG="configs/zero_stage2.yaml"         # DeepSpeed ZeRO Stage 2 (与PyTorch 2.5.0不兼容)
+# ACCELERATE_CONFIG="configs/fsdp_config.yaml"         # FSDP SIZE_BASED (与PyTorch 2.5.0的DTensor有冲突)
+# ACCELERATE_CONFIG="configs/ddp_config.yaml"          # DDP (最稳定，但显存占用高)
+ACCELERATE_CONFIG="configs/fsdp_config_transformer.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
 
 # Mixed precision training
 MIXED_PRECISION="bf16"
@@ -119,6 +133,14 @@ if [ "$USE_HF_DATA" = "true" ]; then
     CMD_ARGS+=" --use_hf_data --datasets ${HF_DATASETS}"
 fi
 
+# Weights & Biases
+if [ "$USE_WANDB" = "true" ]; then
+    CMD_ARGS+=" --use_wandb"
+    if [ -n "$WANDB_PROJECT" ]; then
+        CMD_ARGS+=" --wandb_project ${WANDB_PROJECT}"
+    fi
+fi
+
 # Build accelerate command
 ACCELERATE_CMD="accelerate launch"
 ACCELERATE_CMD+=" --num_processes ${NUM_GPUS}"
@@ -151,6 +173,10 @@ else
 fi
 echo "Output Directory:  ${OUTPUT_DIR}/${PROJECT_NAME}"
 echo "Use HF Data:       ${USE_HF_DATA}"
+echo "Use Wandb:         ${USE_WANDB}"
+if [ "$USE_WANDB" = "true" ] && [ -n "$WANDB_PROJECT" ]; then
+    echo "Wandb Project:     ${WANDB_PROJECT}"
+fi
 if [ -n "$RESUME_CHECKPOINT" ]; then
 echo "Resume From:       ${RESUME_CHECKPOINT}"
 fi

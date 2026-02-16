@@ -1,0 +1,117 @@
+# FSDP Configuration for OmniSVG Training
+# PyTorch Fully Sharded Data Parallel - 替代 DeepSpeed ZeRO Stage 2
+# 适用于 PyTorch 2.4+ 版本
+
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+
+# ==============================================================================
+# FSDP 核心配置
+# ==============================================================================
+fsdp_config:
+  # 自动包裹策略 - 基于大小进行分片（更通用，不依赖特定层类名）
+  # SIZE_BASED_WRAP: 根据参数量自动分片（推荐，兼容性最好）
+  # TRANSFORMER_BASED_WRAP: 基于Transformer层（需要指定层类名）
+  fsdp_auto_wrap_policy: SIZE_BASED_WRAP
+  
+  # 最小包裹参数量（单位：百万参数）
+  # 100M = 100,000,000 参数，适合大模型分片
+  fsdp_min_num_params: 100000000
+  
+  # Transformer层类名（使用SIZE_BASED_WRAP时不需要）
+  # fsdp_transformer_layer_cls_to_wrap: Qwen2VLDecoderLayer
+  
+  # 分片策略：FULL_SHARD（完全分片，类似DeepSpeed ZeRO Stage 2）
+  # 选项：
+  #   - FULL_SHARD: 完全分片参数、梯度和优化器状态（最省显存）
+  #   - SHARD_GRAD_OP: 只分片梯度和优化器状态
+  #   - NO_SHARD: 不分片（等同于DDP）
+  fsdp_sharding_strategy: FULL_SHARD
+  
+  # 反向传播预取策略 - 提前准备下一层的参数
+  # BACKWARD_PRE: 在当前层反向传播前预取下一层（推荐）
+  fsdp_backward_prefetch: BACKWARD_PRE
+  
+  # 前向传播预取 - 一般设为false以节省显存
+  fsdp_forward_prefetch: false
+  
+  # 状态字典类型 - checkpoint保存格式
+  # FULL_STATE_DICT: 完整模型（方便加载，但保存时占用显存）
+  # SHARDED_STATE_DICT: 分片保存（节省显存，但需要用FSDP加载）
+  fsdp_state_dict_type: FULL_STATE_DICT
+  
+  # 同步模块状态 - 确保所有进程的模型初始状态一致
+  fsdp_sync_module_states: true
+  
+  # 使用原始参数 - PyTorch 2.0+推荐开启
+  # 允许直接访问参数，兼容性更好
+  fsdp_use_orig_params: true
+  
+  # CPU RAM高效加载 - 加载大模型时节省显存
+  # true: 先在CPU上加载，再逐层移到GPU（推荐）
+  fsdp_cpu_ram_efficient_loading: true
+  
+  # 参数卸载到CPU - 极端显存不足时使用
+  # false: 参数保留在GPU（推荐，性能更好）
+  # true: 参数卸载到CPU（显存极度不足时）
+  fsdp_offload_params: false
+  
+  # 激活值检查点 - 与 gradient_checkpointing 配合
+  # 注意：这个应该在模型配置中设置，而不是这里
+  # fsdp_activation_checkpointing: false
+
+# ==============================================================================
+# 分布式训练基础配置
+# ==============================================================================
+# 混合精度训练 - bf16 对大模型友好
+mixed_precision: bf16
+
+# BF16降级设置
+downcast_bf16: 'no'
+
+# GPU设置
+num_processes: 4        # 4张GPU
+gpu_ids: all
+use_cpu: false
+
+# 单机训练
+num_machines: 1
+machine_rank: 0
+main_process_ip: null
+main_process_port: null
+
+# 主训练函数名
+main_training_function: main
+
+# 分布式后端
+rdzv_backend: static
+same_network: true
+
+# TPU设置（不使用）
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+
+# ==============================================================================
+# 说明和最佳实践
+# ==============================================================================
+# 
+# FSDP vs DeepSpeed ZeRO Stage 2 对比：
+# - FULL_SHARD ≈ ZeRO Stage 2（分片参数和优化器状态）
+# - 显存效率相当，性能略有差异
+# - FSDP是PyTorch原生，兼容性更好
+# 
+# 显存优化建议：
+# 1. 如果显存够用：保持当前配置（最佳性能）
+# 2. 如果显存紧张：设置 fsdp_offload_params: true
+# 3. 如果极度紧张：结合使用 gradient_checkpointing（在train_config中设置）
+# 
+# 性能优化建议：
+# 1. backward_prefetch=BACKWARD_PRE 可提升10-15%速度
+# 2. use_orig_params=true 提高兼容性
+# 3. cpu_ram_efficient_loading=true 加载大模型时避免OOM
+# 
+# 如需修改GPU数量：
+# - 只需修改 num_processes 即可
+# 
+# ==============================================================================

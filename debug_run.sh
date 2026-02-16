@@ -32,7 +32,7 @@ BATCH_SIZE=1
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
-DATA_DIR="/data/phd23_weiguang_zhang/works/svg/my_zhuan"
+DATA_DIR="/data/phd23_weiguang_zhang/works/svg/my_zhuan2"
 
 # Output directory for checkpoints and logs
 OUTPUT_DIR="./output"
@@ -56,6 +56,17 @@ USE_HF_DATA="false"
 # HuggingFace datasets to use (only if USE_HF_DATA="true")
 # Options: "illustration", "icon", or "illustration icon" (both)
 HF_DATASETS="illustration icon"
+
+# ==============================================================================
+# Logging Configuration
+# ==============================================================================
+
+# Enable Weights & Biases for cloud visualization
+# Set to "true" to enable remote access to training metrics
+USE_WANDB="true"
+
+# Weights & Biases project name (optional, defaults to "omnisvg-training")
+WANDB_PROJECT="omnisvg-training"
 
 # ==============================================================================
 # Advanced Configuration
@@ -119,6 +130,14 @@ if [ "$USE_HF_DATA" = "true" ]; then
     CMD_ARGS+=" --use_hf_data --datasets ${HF_DATASETS}"
 fi
 
+# Weights & Biases
+if [ "$USE_WANDB" = "true" ]; then
+    CMD_ARGS+=" --use_wandb"
+    if [ -n "$WANDB_PROJECT" ]; then
+        CMD_ARGS+=" --wandb_project ${WANDB_PROJECT}"
+    fi
+fi
+
 # Build accelerate command
 ACCELERATE_CMD="accelerate launch"
 ACCELERATE_CMD+=" --num_processes ${NUM_GPUS}"
@@ -151,6 +170,10 @@ else
 fi
 echo "Output Directory:  ${OUTPUT_DIR}/${PROJECT_NAME}"
 echo "Use HF Data:       ${USE_HF_DATA}"
+echo "Use Wandb:         ${USE_WANDB}"
+if [ "$USE_WANDB" = "true" ] && [ -n "$WANDB_PROJECT" ]; then
+    echo "Wandb Project:     ${WANDB_PROJECT}"
+fi
 if [ -n "$RESUME_CHECKPOINT" ]; then
 echo "Resume From:       ${RESUME_CHECKPOINT}"
 fi

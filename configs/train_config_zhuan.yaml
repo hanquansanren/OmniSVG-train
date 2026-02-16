@@ -9,15 +9,18 @@ model:
   use_flash_attn: true
   torch_dtype: "bfloat16"
   
-  # Enable gradient checkpointing to save ~30-40% memory
-  # Trade-off: ~20% slower training
+  # Gradient Checkpointing 设置
+  # 注意：模型层面的 gradient_checkpointing 与 FSDP 在 PyTorch 2.5.0 有冲突
+  # 解决方案：关闭模型层面的，使用 FSDP 原生的 activation_checkpointing
+  # 在 fsdp_config_transformer.yaml 中已设置 fsdp_activation_checkpointing: true
+  # 这样既能节省显存（~30-40%），又不会与 FSDP 冲突
   use_gradient_checkpointing: true
 
 # ==============================================================================
 # Data Configuration  
 # ==============================================================================
 data:
-  data_dir: "/data/phd23_weiguang_zhang/works/svg/my_zhuan"
+  data_dir: "/data/phd23_weiguang_zhang/works/svg/my_zhuan2"
   
   # Reduced image size: 448 -> 336 (saves ~40% image memory)
   target_image_size: 224
@@ -34,11 +37,11 @@ data:
 # Training Configuration
 # ==============================================================================
 training:
-  learning_rate: 1e-4 # 1.0e-5
-  weight_decay: 0.05 # 0.015
+  learning_rate: 1.0e-4 # 1.0e-5
+  weight_decay: 0.1 # 0.015
   max_grad_norm: 1.0 # 0.8
   
-  epochs: 10
+  epochs: 15
   # Increased gradient accumulation: 4 -> 8
   # This maintains effective batch size while using less memory per step
   gradient_accumulation_steps: 4

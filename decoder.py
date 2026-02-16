@@ -17,6 +17,7 @@ class SketchDecoder(nn.Module):
                  text_len,
                  model_path="Qwen/Qwen2.5-VL-3B-Instruct",
                  use_gradient_checkpointing=False,
+                 device_map=None,  # 新增参数：允许从外部控制device_map
                  **kwargs):
         super().__init__()
         
@@ -41,13 +42,21 @@ class SketchDecoder(nn.Module):
             trust_remote_code=True
         )
 
+        # 分布式训练时不使用device_map，让Accelerate管理设备
+        # 单GPU推理时可以使用device_map="auto"
+        load_kwargs = {
+            "config": config,
+            "torch_dtype": torch.bfloat16,
+            "ignore_mismatched_sizes": True
+        }
+        
+        # 只在非None时添加device_map（分布式训练时应为None）
+        if device_map is not None:
+            load_kwargs["device_map"] = device_map
+        
         self.transformer = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             model_path,
-            config=config,
-            torch_dtype=torch.bfloat16,
-            #attn_implementation="flash_attention_2", 
-            device_map="auto",  # 自动分配到 GPU
-            ignore_mismatched_sizes=True
+            **load_kwargs
         )
 
         self.transformer.resize_token_embeddings(self.vocab_size)
