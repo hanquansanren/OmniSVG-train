@@ -133,5 +133,6 @@ output_debug/*
 output_image/*
 backup/*
 examples/*
-
+*.out
+*.out_perf
 
