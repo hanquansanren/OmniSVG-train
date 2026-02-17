@@ -238,11 +238,12 @@ sleep 2
 echo "✓ GPU cleanup completed"
 echo ""
 
-# ⭐ CUDA调试环境变量 - 使用DDP时可以关闭以提升性能
-# 如果DDP也失败，取消注释下面3行以获取详细错误信息
+# ⭐ CUDA调试环境变量 - 训练正常后关闭以减少日志
+# 如果遇到错误，取消注释下面的行以获取详细调试信息
 # export CUDA_LAUNCH_BLOCKING=1                         # 同步CUDA操作，获取准确错误堆栈
 # export TORCH_USE_CUDA_DSA=1                           # 启用设备端断言
-export TORCH_DISTRIBUTED_DEBUG=INFO                   # 基本调试信息（不影响性能）
+# export TORCH_DISTRIBUTED_DEBUG=INFO                   # 基本调试信息
+export TORCH_DISTRIBUTED_DEBUG=OFF                     # 关闭分布式调试日志（减少打印）
 
 # ⭐ 关键：设置NCCL超时时间 - PyTorch 2.4+ 使用新的环境变量
 # 默认10分钟(600秒)对于FSDP checkpoint保存可能不够
