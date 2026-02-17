@@ -86,10 +86,9 @@ TRAIN_CONFIG_FILE="train_config_zhuan.yaml"
 # Leave empty for default settings 多卡训练时需要配置
 # ACCELERATE_CONFIG="configs/zero_stage2.yaml"         # DeepSpeed ZeRO Stage 2 (与PyTorch 2.5.0不兼容)
 # ACCELERATE_CONFIG="configs/fsdp_config.yaml"         # FSDP SIZE_BASED (与PyTorch 2.5.0的DTensor有冲突)
-# ACCELERATE_CONFIG="configs/ddp_config.yaml"          # DDP (最稳定，但显存占用高)
-ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
-# fsdp_config_sharded.yaml
-# fsdp_config_transformer.yaml
+ACCELERATE_CONFIG="configs/ddp_config.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
+# ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
+# ACCELERATE_CONFIG="configs/fsdp_config_minimal.yaml"  # FSDP 最简化配置（用于排查CUDA错误）
 
 # Mixed precision training
 MIXED_PRECISION="bf16"
@@ -239,10 +238,11 @@ sleep 2
 echo "✓ GPU cleanup completed"
 echo ""
 
-# ⭐ CUDA调试环境变量 - 帮助定位CUDA错误
-export CUDA_LAUNCH_BLOCKING=1                         # 同步CUDA操作，获取准确错误堆栈
-export TORCH_USE_CUDA_DSA=1                           # 启用设备端断言
-export TORCH_DISTRIBUTED_DEBUG=DETAIL                 # 详细调试信息
+# ⭐ CUDA调试环境变量 - 使用DDP时可以关闭以提升性能
+# 如果DDP也失败，取消注释下面3行以获取详细错误信息
+# export CUDA_LAUNCH_BLOCKING=1                         # 同步CUDA操作，获取准确错误堆栈
+# export TORCH_USE_CUDA_DSA=1                           # 启用设备端断言
+export TORCH_DISTRIBUTED_DEBUG=INFO                   # 基本调试信息（不影响性能）
 
 # ⭐ 关键：设置NCCL超时时间 - PyTorch 2.4+ 使用新的环境变量
 # 默认10分钟(600秒)对于FSDP checkpoint保存可能不够
