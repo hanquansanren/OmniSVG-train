@@ -1,6 +1,11 @@
 # DDP (Distributed Data Parallel) Configuration
 # 最简单、最稳定的多GPU训练方案
 # 适用于显存充足的情况（4B模型 + 4张GPU应该够用）
+# 
+# ⭐ 推荐使用场景：
+# - FSDP遇到NCCL超时问题
+# - 追求最大稳定性
+# - 4B模型 + 显存 ≥ 16GB/卡
 
 compute_environment: LOCAL_MACHINE
 

@@ -229,15 +229,28 @@ else
     export NCCL_IB_DISABLE=0
 fi
 
-# 关键：设置NCCL超时时间，避免checkpoint保存时超时
-# FSDP保存checkpoint时需要大量NCCL通信，默认10分钟(600秒)可能不够
-# 设置为60分钟(3600秒)以应对慢速存储和大模型
-export NCCL_TIMEOUT=3600
-echo "Setting NCCL_TIMEOUT=3600 seconds (60 minutes) for FSDP checkpoint saving"
+# ⭐ 关键：设置NCCL超时时间 - PyTorch 2.4+ 使用新的环境变量
+# 默认10分钟(600秒)对于FSDP checkpoint保存可能不够
+# 
+# PyTorch 2.4+ 需要使用这些环境变量（以毫秒为单位）：
+export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=3600         # 心跳超时：60分钟
+export TORCH_NCCL_BLOCKING_WAIT=1                     # 使用阻塞等待（更稳定）
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1              # 异步错误处理
+export TORCH_DISTRIBUTED_DEBUG=DETAIL                 # 详细调试信息
 
-# 额外的NCCL优化设置（可选，提高稳定性）
-export NCCL_ASYNC_ERROR_HANDLING=1  # 启用异步错误处理
-export NCCL_DEBUG=INFO               # 调试信息（可选，生产环境可以关闭）
+# 旧版本兼容（PyTorch < 2.4）
+export NCCL_TIMEOUT=3600
+
+echo "⚙️  NCCL Configuration:"
+echo "  - Heartbeat timeout: 3600 seconds (60 minutes)"
+echo "  - Blocking wait: enabled"
+echo "  - Async error handling: enabled"
+echo ""
+
+# 可选：NCCL性能调优（根据网络情况调整）
+# export NCCL_DEBUG=INFO              # 详细日志（调试时启用）
+# export NCCL_IB_TIMEOUT=50           # InfiniBand超时（如果使用IB）
+# export NCCL_SOCKET_NTHREADS=8       # Socket线程数
 
 echo "Starting training..."
 echo "Command: ${ACCELERATE_CMD} train.py ${CMD_ARGS}"

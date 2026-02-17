@@ -68,7 +68,7 @@ training:
 logging:
   log_every: 15 # 10
   save_every: 2000 # 3000
-  val_every: 1000 # 5000
+  val_every: 800 # 5000
 
 # ==============================================================================
 # DataLoader Configuration
