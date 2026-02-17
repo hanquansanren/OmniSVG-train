@@ -24,38 +24,11 @@ Usage:
 """
 
 import os
-import sys
-
-# ⭐⭐⭐ 关键：在导入torch之前设置NCCL超时环境变量 ⭐⭐⭐
-# PyTorch 2.5.0 在导入时就初始化NCCL，必须提前设置这些变量
-# 
-# 注意：这些必须在 import torch 之前设置！
-if "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC" not in os.environ:
-    os.environ["TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC"] = "3600"  # 60分钟
-if "TORCH_NCCL_BLOCKING_WAIT" not in os.environ:
-    os.environ["TORCH_NCCL_BLOCKING_WAIT"] = "1"
-if "TORCH_NCCL_ASYNC_ERROR_HANDLING" not in os.environ:
-    os.environ["TORCH_NCCL_ASYNC_ERROR_HANDLING"] = "1"
-
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# ⭐ 禁用详细日志，减少FSDP/Transformers的打印信息
-os.environ["TRANSFORMERS_VERBOSITY"] = "error"  # 只显示错误
-os.environ["ACCELERATE_LOG_LEVEL"] = "warning"  # 只显示警告
-os.environ["NCCL_DEBUG"] = ""  # 禁用NCCL调试日志
-os.environ["TORCH_CPP_LOG_LEVEL"] = "ERROR"  # 只显示C++错误日志
-
-# 打印NCCL配置（仅主进程）
-if os.environ.get("LOCAL_RANK", "0") == "0":
-    print(f"🔧 NCCL Configuration (set before torch import):")
-    print(f"   TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC = {os.environ.get('TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC', 'not set')}")
-    print(f"   TORCH_NCCL_BLOCKING_WAIT = {os.environ.get('TORCH_NCCL_BLOCKING_WAIT', 'not set')}")
-    print()
-
 import argparse
 import json
-import logging
 import torch
 import torch.nn as nn
 import numpy as np
@@ -74,17 +47,6 @@ from transformers import (
 )
 from accelerate import Accelerator
 from safetensors.torch import load_file
-
-# ⭐ 配置日志级别，减少FSDP/Transformers/Accelerate的详细打印
-logging.basicConfig(
-    level=logging.WARNING,  # 只显示WARNING及以上级别
-    format='%(levelname)s: %(message)s'
-)
-# 明确禁用特定库的详细日志
-logging.getLogger("transformers").setLevel(logging.ERROR)
-logging.getLogger("accelerate").setLevel(logging.WARNING)
-logging.getLogger("torch.distributed").setLevel(logging.WARNING)
-logging.getLogger("torch.distributed.fsdp").setLevel(logging.WARNING)
 
 # Weights & Biases for cloud visualization
 try:
@@ -686,24 +648,18 @@ def compute_task_specific_losses(
 def train(args, config: OmniSVGConfig):
     """Main training function."""
     
-    # Initialize accelerator with extended timeout for FSDP
-    # 设置分布式后端的超时时间（对FSDP很重要）
-    from datetime import timedelta
-    from accelerate.utils import InitProcessGroupKwargs
+    # 设置NCCL超时时间（对于大模型checkpoint保存很重要）
+    # 默认10分钟可能不够，尤其是FSDP需要gather所有参数时
+    # 设置为30分钟（1800秒）
+    import os
+    if 'NCCL_TIMEOUT' not in os.environ:
+        os.environ['NCCL_TIMEOUT'] = '1800'  # 30分钟
+        print(f"Set NCCL_TIMEOUT to 1800 seconds (30 minutes) for FSDP checkpoint saving")
     
-    # 创建超时配置：60分钟（3600秒）
-    kwargs_handlers = [
-        InitProcessGroupKwargs(timeout=timedelta(seconds=3600))
-    ]
-    
+    # Initialize accelerator
     accelerator = Accelerator(
-        gradient_accumulation_steps=config.training.gradient_accumulation_steps,
-        kwargs_handlers=kwargs_handlers,  # 传递timeout配置
-        log_with=None,  # 禁用默认日志记录器（减少打印）
+        gradient_accumulation_steps=config.training.gradient_accumulation_steps
     )
-    
-    if accelerator.is_main_process:
-        print(f"🔧 Initialized Accelerator with NCCL timeout = 3600 seconds (60 minutes)")
     
     # Set seed
     set_seed(config.training.seed)
@@ -990,51 +946,21 @@ def train(args, config: OmniSVGConfig):
                     
                     # Save checkpoint
                     if global_step % config.training.save_every == 0:
-                        if accelerator.is_main_process:
-                            print(f"\n⏱️  Step {global_step}: Checkpoint save triggered...")
-                        
                         save_checkpoint(
                             output_dir, global_step, epoch,
                             model, optimizer, lr_scheduler,
                             accelerator,
                         )
-                        
-                        if accelerator.is_main_process:
-                            print(f"✓ Checkpoint save completed, continuing training...\n")
                     
                     # Validation
                     if global_step % config.training.val_every == 0:
-                        if accelerator.is_main_process:
-                            print(f"\n⏱️  Step {global_step}: Validation triggered...")
-                        
                         val_loss = validate(
                             model, val_dataloader, processor, config,
                             accelerator, writer, global_step
                         )
                         
-                        if accelerator.is_main_process:
-                            print(f"✓ Validation completed, continuing training...\n")
-                        
-                        # 检查是否是最佳模型（所有进程都需要参与判断）
-                        # 使用broadcast确保所有进程知道是否需要保存
-                        is_best_model = val_loss < best_val_loss
-                        
-                        # 广播决定到所有进程（避免进程分歧）
-                        if torch.distributed.is_initialized():
-                            is_best_tensor = torch.tensor(
-                                [1.0 if is_best_model else 0.0], 
-                                device=accelerator.device
-                            )
-                            torch.distributed.broadcast(is_best_tensor, src=0)
-                            is_best_model = is_best_tensor.item() > 0.5
-                        
-                        # 所有进程都调用save_checkpoint（关键！）
-                        if is_best_model:
-                            if accelerator.is_main_process:
-                                best_val_loss = val_loss
-                                print(f"\n🌟 New best model! Val loss: {val_loss:.4f}")
-                            
-                            # 所有进程都必须调用，即使只有主进程实际保存
+                        if accelerator.is_main_process and val_loss < best_val_loss:
+                            best_val_loss = val_loss
                             save_checkpoint(
                                 output_dir, global_step, epoch,
                                 model, optimizer, lr_scheduler,
@@ -1210,18 +1136,7 @@ def save_checkpoint(
     is_best: bool = False,
 ):
     """Save training checkpoint using Accelerate's save_state for FSDP compatibility."""
-    
-    # 先确保所有GPU完成当前工作，避免保存时的竞争
-    if accelerator.is_main_process:
-        print(f"\n{'='*60}")
-        print(f"💾 Saving checkpoint at step {step}...")
-        print(f"{'='*60}")
-    
-    # 清空CUDA缓存，释放不必要的显存
-    torch.cuda.empty_cache()
-    
-    # 确保所有进程同步到这里
-    accelerator.wait_for_everyone()
+    print(f"Saving checkpoint at step {step}...")
     
     if is_best:
         ckpt_name = "best_model"
@@ -1233,23 +1148,16 @@ def save_checkpoint(
     # 使用Accelerate的save_state方法，自动处理FSDP/DDP的checkpoint保存
     # 这个方法会正确处理FSDP的状态字典收集，避免NCCL超时
     try:
-        import time
-        start_time = time.time()
-        
-        # save_state会自动在所有进程间同步
-        # 对于FSDP，这会调用正确的FSDP state_dict方法
+        # save_state会自动在所有进程间同步，不需要manual wait
         accelerator.save_state(str(ckpt_path))
         
-        elapsed = time.time() - start_time
-        
-        # 只在主进程保存额外信息和打印日志
+        # 只在主进程保存额外信息
         if accelerator.is_main_process:
             # Save training state info
             info_dict = {
                 'step': step,
                 'epoch': epoch,
                 'is_best': is_best,
-                'save_time_seconds': elapsed,
             }
             
             # save_state 已经创建了目录，直接保存额外信息
@@ -1257,25 +1165,14 @@ def save_checkpoint(
                 json.dump(info_dict, f, indent=2)
             
             print(f"✓ Checkpoint saved to: {ckpt_path}")
-            print(f"  Save time: {elapsed:.1f} seconds")
-            print(f"{'='*60}\n")
     
     except Exception as e:
-        if accelerator.is_main_process:
-            print(f"\n{'='*60}")
-            print(f"⚠ WARNING: Failed to save checkpoint at step {step}")
-            print(f"Error: {e}")
-            print(f"{'='*60}\n")
-            import traceback
-            traceback.print_exc()
-        
-        # 即使保存失败也继续训练
-        # 只记录警告，不中断训练
+        print(f"⚠ Warning: Failed to save checkpoint: {e}")
+        import traceback
+        traceback.print_exc()
     
-    finally:
-        # 确保所有进程都同步，即使发生异常
-        # 这是关键！避免某些进程提前退出导致进程不匹配
-        accelerator.wait_for_everyone()
+    # 确保所有进程同步完成
+    accelerator.wait_for_everyone()
 
 
 # ============================================================================
