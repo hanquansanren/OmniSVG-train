@@ -3,9 +3,15 @@ import torch.nn as nn
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoConfig
 from transformers.models.qwen2_5_vl.modeling_qwen2_5_vl import Qwen2_5_VLCausalLMOutputWithPast
 from typing import Any, Dict, List, Optional, Tuple, Union
+import logging
 
 
 import transformers.models.qwen2_5_vl.modeling_qwen2_5_vl as qwen_modeling
+
+# 禁用transformers加载模型时的详细日志
+logging.getLogger("transformers.modeling_utils").setLevel(logging.ERROR)
+logging.getLogger("transformers.configuration_utils").setLevel(logging.WARNING)
+logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.WARNING)
 
 class SketchDecoder(nn.Module):
     """

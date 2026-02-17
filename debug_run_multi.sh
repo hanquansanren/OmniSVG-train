@@ -86,7 +86,7 @@ TRAIN_CONFIG_FILE="train_config_zhuan.yaml"
 # Leave empty for default settings 多卡训练时需要配置
 # ACCELERATE_CONFIG="configs/zero_stage2.yaml"         # DeepSpeed ZeRO Stage 2 (与PyTorch 2.5.0不兼容)
 # ACCELERATE_CONFIG="configs/fsdp_config.yaml"         # FSDP SIZE_BASED (与PyTorch 2.5.0的DTensor有冲突)
-ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
+ACCELERATE_CONFIG="configs/ddp_config.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
 # ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
 # ACCELERATE_CONFIG="configs/fsdp_config_minimal.yaml"  # FSDP 最简化配置（用于排查CUDA错误）
 
@@ -238,12 +238,16 @@ sleep 2
 echo "✓ GPU cleanup completed"
 echo ""
 
-# ⭐ CUDA调试环境变量 - 训练正常后关闭以减少日志
-# 如果遇到错误，取消注释下面的行以获取详细调试信息
+# ⭐ 禁用FSDP和分布式训练的详细日志输出
+export TORCH_DISTRIBUTED_LOG_LEVEL=WARNING            # 只显示警告和错误
+export TORCH_CPP_LOG_LEVEL=WARNING                    # C++层日志级别
+export FSDP_LOG_LEVEL=WARNING                         # FSDP日志级别
+
+# ⭐ CUDA调试环境变量 - 训练稳定后关闭以提升性能
+# 如果遇到CUDA错误，取消注释下面2行以获取详细错误信息
 # export CUDA_LAUNCH_BLOCKING=1                         # 同步CUDA操作，获取准确错误堆栈
 # export TORCH_USE_CUDA_DSA=1                           # 启用设备端断言
-# export TORCH_DISTRIBUTED_DEBUG=INFO                   # 基本调试信息
-export TORCH_DISTRIBUTED_DEBUG=OFF                     # 关闭分布式调试日志（减少打印）
+# export TORCH_DISTRIBUTED_DEBUG=DETAIL                 # 详细调试信息（会降低性能）
 
 # ⭐ 关键：设置NCCL超时时间 - PyTorch 2.4+ 使用新的环境变量
 # 默认10分钟(600秒)对于FSDP checkpoint保存可能不够
@@ -256,12 +260,11 @@ export TORCH_NCCL_ASYNC_ERROR_HANDLING=1              # 异步错误处理
 # 旧版本兼容（PyTorch < 2.4）
 export NCCL_TIMEOUT=3600
 
-echo "⚙️  CUDA & NCCL Configuration:"
-echo "  - CUDA_LAUNCH_BLOCKING: 1 (synchronous mode for debugging)"
-echo "  - TORCH_USE_CUDA_DSA: 1 (device-side assertions)"
-echo "  - NCCL Heartbeat timeout: 3600 seconds (60 minutes)"
-echo "  - NCCL Blocking wait: enabled"
-echo "  - NCCL Async error handling: enabled"
+echo "⚙️  训练配置:"
+echo "  - 日志级别: WARNING (禁用FSDP详细输出)"
+echo "  - NCCL心跳超时: 3600秒 (60分钟)"
+echo "  - NCCL阻塞等待: 启用"
+echo "  - NCCL异步错误处理: 启用"
 echo ""
 
 # 可选：NCCL性能调优（根据网络情况调整）

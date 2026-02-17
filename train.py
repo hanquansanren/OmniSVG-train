@@ -40,12 +40,6 @@ if "TORCH_NCCL_ASYNC_ERROR_HANDLING" not in os.environ:
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# ⭐ 禁用详细日志，减少FSDP/Transformers的打印信息
-os.environ["TRANSFORMERS_VERBOSITY"] = "error"  # 只显示错误
-os.environ["ACCELERATE_LOG_LEVEL"] = "warning"  # 只显示警告
-os.environ["NCCL_DEBUG"] = ""  # 禁用NCCL调试日志
-os.environ["TORCH_CPP_LOG_LEVEL"] = "ERROR"  # 只显示C++错误日志
-
 # 打印NCCL配置（仅主进程）
 if os.environ.get("LOCAL_RANK", "0") == "0":
     print(f"🔧 NCCL Configuration (set before torch import):")
@@ -55,7 +49,6 @@ if os.environ.get("LOCAL_RANK", "0") == "0":
 
 import argparse
 import json
-import logging
 import torch
 import torch.nn as nn
 import numpy as np
@@ -74,17 +67,6 @@ from transformers import (
 )
 from accelerate import Accelerator
 from safetensors.torch import load_file
-
-# ⭐ 配置日志级别，减少FSDP/Transformers/Accelerate的详细打印
-logging.basicConfig(
-    level=logging.WARNING,  # 只显示WARNING及以上级别
-    format='%(levelname)s: %(message)s'
-)
-# 明确禁用特定库的详细日志
-logging.getLogger("transformers").setLevel(logging.ERROR)
-logging.getLogger("accelerate").setLevel(logging.WARNING)
-logging.getLogger("torch.distributed").setLevel(logging.WARNING)
-logging.getLogger("torch.distributed.fsdp").setLevel(logging.WARNING)
 
 # Weights & Biases for cloud visualization
 try:
@@ -114,6 +96,26 @@ except ImportError:
     print("Warning: qwen_vl_utils not found. Image processing may be limited.")
     process_vision_info = None
 
+# ============================================================================
+# Logging Configuration - 禁用FSDP详细日志
+# ============================================================================
+
+import logging
+import warnings
+
+# 禁用FSDP和分布式训练的详细日志
+logging.getLogger("torch.distributed.fsdp").setLevel(logging.WARNING)
+logging.getLogger("torch.distributed").setLevel(logging.WARNING)
+logging.getLogger("torch.nn.parallel").setLevel(logging.WARNING)
+logging.getLogger("accelerate").setLevel(logging.WARNING)
+
+# 禁用transformers的详细日志
+logging.getLogger("transformers").setLevel(logging.WARNING)
+logging.getLogger("transformers.modeling_utils").setLevel(logging.ERROR)
+
+# 禁用不必要的警告
+warnings.filterwarnings("ignore", category=UserWarning, module="torch.distributed")
+warnings.filterwarnings("ignore", category=FutureWarning, module="transformers")
 
 # ============================================================================
 # Model Configuration
@@ -699,7 +701,7 @@ def train(args, config: OmniSVGConfig):
     accelerator = Accelerator(
         gradient_accumulation_steps=config.training.gradient_accumulation_steps,
         kwargs_handlers=kwargs_handlers,  # 传递timeout配置
-        log_with=None,  # 禁用默认日志记录器（减少打印）
+        log_with=None,  # 禁用额外的日志系统
     )
     
     if accelerator.is_main_process:
