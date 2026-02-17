@@ -33,8 +33,6 @@ BATCH_SIZE=1
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
 DATA_DIR="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_zhuan"
-# "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_zhuan2"
-# "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_zhuan"
 
 # Output directory for checkpoints and logs
 OUTPUT_DIR="./output"
@@ -89,8 +87,9 @@ TRAIN_CONFIG_FILE="train_config_zhuan.yaml"
 # ACCELERATE_CONFIG="configs/zero_stage2.yaml"         # DeepSpeed ZeRO Stage 2 (与PyTorch 2.5.0不兼容)
 # ACCELERATE_CONFIG="configs/fsdp_config.yaml"         # FSDP SIZE_BASED (与PyTorch 2.5.0的DTensor有冲突)
 # ACCELERATE_CONFIG="configs/ddp_config.yaml"          # DDP (最稳定，但显存占用高)
-ACCELERATE_CONFIG="configs/fsdp_config_transformer.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
-# configs/fsdp_config_sharded.yaml
+ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
+# fsdp_config_sharded.yaml
+# fsdp_config_transformer.yaml
 
 # Mixed precision training
 MIXED_PRECISION="bf16"
@@ -229,6 +228,29 @@ else
     export NCCL_P2P_DISABLE=0
     export NCCL_IB_DISABLE=0
 fi
+
+# ⭐ 关键：设置NCCL超时时间 - PyTorch 2.4+ 使用新的环境变量
+# 默认10分钟(600秒)对于FSDP checkpoint保存可能不够
+# 
+# PyTorch 2.4+ 需要使用这些环境变量（以毫秒为单位）：
+export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=3600         # 心跳超时：60分钟
+export TORCH_NCCL_BLOCKING_WAIT=1                     # 使用阻塞等待（更稳定）
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1              # 异步错误处理
+export TORCH_DISTRIBUTED_DEBUG=DETAIL                 # 详细调试信息
+
+# 旧版本兼容（PyTorch < 2.4）
+export NCCL_TIMEOUT=3600
+
+echo "⚙️  NCCL Configuration:"
+echo "  - Heartbeat timeout: 3600 seconds (60 minutes)"
+echo "  - Blocking wait: enabled"
+echo "  - Async error handling: enabled"
+echo ""
+
+# 可选：NCCL性能调优（根据网络情况调整）
+# export NCCL_DEBUG=INFO              # 详细日志（调试时启用）
+# export NCCL_IB_TIMEOUT=50           # InfiniBand超时（如果使用IB）
+# export NCCL_SOCKET_NTHREADS=8       # Socket线程数
 
 echo "Starting training..."
 echo "Command: ${ACCELERATE_CMD} train.py ${CMD_ARGS}"

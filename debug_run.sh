@@ -224,6 +224,17 @@ else
     export NCCL_IB_DISABLE=0
 fi
 
+# ⭐ 关键：设置NCCL超时时间 - PyTorch 2.4+ 使用新的环境变量
+export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=3600
+export TORCH_NCCL_BLOCKING_WAIT=1
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+export TORCH_DISTRIBUTED_DEBUG=DETAIL
+export NCCL_TIMEOUT=3600  # 旧版本兼容
+
+echo "⚙️  NCCL Configuration:"
+echo "  - Heartbeat timeout: 3600 seconds (60 minutes)"
+echo ""
+
 echo "Starting training..."
 echo "Command: ${ACCELERATE_CMD} train.py ${CMD_ARGS}"
 echo ""
