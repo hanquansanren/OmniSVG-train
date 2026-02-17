@@ -24,7 +24,7 @@ DISABLE_NCCL_P2P_IB="true"
 NUM_GPUS=4
 
 # Batch size per GPU
-BATCH_SIZE=2
+BATCH_SIZE=1
 
 # Maximum SVG sequence length
 # MAX_SEQ_LENGTH=2048
@@ -32,7 +32,7 @@ BATCH_SIZE=2
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
-DATA_DIR="/data/phd23_weiguang_zhang/works/svg/my_zhuan"
+DATA_DIR="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_zhuan"
 
 # Output directory for checkpoints and logs
 OUTPUT_DIR="./output"

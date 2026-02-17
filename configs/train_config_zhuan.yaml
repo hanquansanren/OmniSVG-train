@@ -14,7 +14,7 @@ model:
   # 解决方案：关闭模型层面的，使用 FSDP 原生的 activation_checkpointing
   # 在 fsdp_config_transformer.yaml 中已设置 fsdp_activation_checkpointing: true
   # 这样既能节省显存（~30-40%），又不会与 FSDP 冲突
-  use_gradient_checkpointing: true
+  use_gradient_checkpointing: false
 
 # ==============================================================================
 # Data Configuration  
