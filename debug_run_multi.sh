@@ -87,7 +87,9 @@ TRAIN_CONFIG_FILE="train_config_zhuan.yaml"
 # ACCELERATE_CONFIG="configs/zero_stage2.yaml"         # DeepSpeed ZeRO Stage 2 (与PyTorch 2.5.0不兼容)
 # ACCELERATE_CONFIG="configs/fsdp_config.yaml"         # FSDP SIZE_BASED (与PyTorch 2.5.0的DTensor有冲突)
 # ACCELERATE_CONFIG="configs/ddp_config.yaml"          # DDP (最稳定，但显存占用高)
-ACCELERATE_CONFIG="configs/fsdp_config_transformer.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
+ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
+# fsdp_config_sharded.yaml
+# fsdp_config_transformer.yaml
 
 # Mixed precision training
 MIXED_PRECISION="bf16"
@@ -226,6 +228,16 @@ else
     export NCCL_P2P_DISABLE=0
     export NCCL_IB_DISABLE=0
 fi
+
+# 关键：设置NCCL超时时间，避免checkpoint保存时超时
+# FSDP保存checkpoint时需要大量NCCL通信，默认10分钟(600秒)可能不够
+# 设置为60分钟(3600秒)以应对慢速存储和大模型
+export NCCL_TIMEOUT=3600
+echo "Setting NCCL_TIMEOUT=3600 seconds (60 minutes) for FSDP checkpoint saving"
+
+# 额外的NCCL优化设置（可选，提高稳定性）
+export NCCL_ASYNC_ERROR_HANDLING=1  # 启用异步错误处理
+export NCCL_DEBUG=INFO               # 调试信息（可选，生产环境可以关闭）
 
 echo "Starting training..."
 echo "Command: ${ACCELERATE_CMD} train.py ${CMD_ARGS}"

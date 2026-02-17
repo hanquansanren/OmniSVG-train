@@ -1136,7 +1136,18 @@ def save_checkpoint(
     is_best: bool = False,
 ):
     """Save training checkpoint using Accelerate's save_state for FSDP compatibility."""
-    print(f"Saving checkpoint at step {step}...")
+    
+    # 先确保所有GPU完成当前工作，避免保存时的竞争
+    if accelerator.is_main_process:
+        print(f"\n{'='*60}")
+        print(f"💾 Saving checkpoint at step {step}...")
+        print(f"{'='*60}")
+    
+    # 清空CUDA缓存，释放不必要的显存
+    torch.cuda.empty_cache()
+    
+    # 确保所有进程同步到这里
+    accelerator.wait_for_everyone()
     
     if is_best:
         ckpt_name = "best_model"
@@ -1148,16 +1159,23 @@ def save_checkpoint(
     # 使用Accelerate的save_state方法，自动处理FSDP/DDP的checkpoint保存
     # 这个方法会正确处理FSDP的状态字典收集，避免NCCL超时
     try:
-        # save_state会自动在所有进程间同步，不需要manual wait
+        import time
+        start_time = time.time()
+        
+        # save_state会自动在所有进程间同步
+        # 对于FSDP，这会调用正确的FSDP state_dict方法
         accelerator.save_state(str(ckpt_path))
         
-        # 只在主进程保存额外信息
+        elapsed = time.time() - start_time
+        
+        # 只在主进程保存额外信息和打印日志
         if accelerator.is_main_process:
             # Save training state info
             info_dict = {
                 'step': step,
                 'epoch': epoch,
                 'is_best': is_best,
+                'save_time_seconds': elapsed,
             }
             
             # save_state 已经创建了目录，直接保存额外信息
@@ -1165,13 +1183,22 @@ def save_checkpoint(
                 json.dump(info_dict, f, indent=2)
             
             print(f"✓ Checkpoint saved to: {ckpt_path}")
+            print(f"  Save time: {elapsed:.1f} seconds")
+            print(f"{'='*60}\n")
     
     except Exception as e:
-        print(f"⚠ Warning: Failed to save checkpoint: {e}")
-        import traceback
-        traceback.print_exc()
+        if accelerator.is_main_process:
+            print(f"\n{'='*60}")
+            print(f"⚠ WARNING: Failed to save checkpoint at step {step}")
+            print(f"Error: {e}")
+            print(f"{'='*60}\n")
+            import traceback
+            traceback.print_exc()
+        
+        # 即使保存失败也继续训练
+        # 只记录警告，不中断训练
     
-    # 确保所有进程同步完成
+    # 最后再次同步，确保所有进程完成
     accelerator.wait_for_everyone()
 
 

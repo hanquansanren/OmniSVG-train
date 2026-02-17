@@ -224,6 +224,14 @@ else
     export NCCL_IB_DISABLE=0
 fi
 
+# 关键：设置NCCL超时时间，避免checkpoint保存时超时
+export NCCL_TIMEOUT=3600
+echo "Setting NCCL_TIMEOUT=3600 seconds (60 minutes) for checkpoint saving"
+
+# 额外的NCCL优化设置
+export NCCL_ASYNC_ERROR_HANDLING=1
+export NCCL_DEBUG=INFO
+
 echo "Starting training..."
 echo "Command: ${ACCELERATE_CMD} train.py ${CMD_ARGS}"
 echo ""
