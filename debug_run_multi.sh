@@ -229,6 +229,21 @@ else
     export NCCL_IB_DISABLE=0
 fi
 
+# ⭐⭐⭐ 重要：清理GPU状态，防止CUDA错误 ⭐⭐⭐
+echo "🧹 Cleaning GPU state..."
+# 杀死可能残留的Python训练进程
+pkill -9 -f "train.py" || true
+pkill -9 -f "accelerate" || true
+# 等待进程完全退出
+sleep 2
+echo "✓ GPU cleanup completed"
+echo ""
+
+# ⭐ CUDA调试环境变量 - 帮助定位CUDA错误
+export CUDA_LAUNCH_BLOCKING=1                         # 同步CUDA操作，获取准确错误堆栈
+export TORCH_USE_CUDA_DSA=1                           # 启用设备端断言
+export TORCH_DISTRIBUTED_DEBUG=DETAIL                 # 详细调试信息
+
 # ⭐ 关键：设置NCCL超时时间 - PyTorch 2.4+ 使用新的环境变量
 # 默认10分钟(600秒)对于FSDP checkpoint保存可能不够
 # 
@@ -236,15 +251,16 @@ fi
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=3600         # 心跳超时：60分钟
 export TORCH_NCCL_BLOCKING_WAIT=1                     # 使用阻塞等待（更稳定）
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1              # 异步错误处理
-export TORCH_DISTRIBUTED_DEBUG=DETAIL                 # 详细调试信息
 
 # 旧版本兼容（PyTorch < 2.4）
 export NCCL_TIMEOUT=3600
 
-echo "⚙️  NCCL Configuration:"
-echo "  - Heartbeat timeout: 3600 seconds (60 minutes)"
-echo "  - Blocking wait: enabled"
-echo "  - Async error handling: enabled"
+echo "⚙️  CUDA & NCCL Configuration:"
+echo "  - CUDA_LAUNCH_BLOCKING: 1 (synchronous mode for debugging)"
+echo "  - TORCH_USE_CUDA_DSA: 1 (device-side assertions)"
+echo "  - NCCL Heartbeat timeout: 3600 seconds (60 minutes)"
+echo "  - NCCL Blocking wait: enabled"
+echo "  - NCCL Async error handling: enabled"
 echo ""
 
 # 可选：NCCL性能调优（根据网络情况调整）

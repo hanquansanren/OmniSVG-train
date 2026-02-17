@@ -1,0 +1,90 @@
+# ==============================================================================
+# Accelerate Config - FSDP Minimal (最简化配置，用于CUDA错误排查)
+# ==============================================================================
+#
+# 这是最简化的FSDP配置，用于排查CUDA初始化错误
+# 
+# 特点：
+#   - 不使用activation checkpointing（避免复杂的内存操作）
+#   - 不使用parameter offloading（避免CPU-GPU传输）
+#   - 使用SIZE_BASED_WRAP（最简单的wrapping策略）
+#   - SHARDED_STATE_DICT（快速checkpoint保存）
+#
+# 使用场景：
+#   - FSDP初始化时出现CUDA错误
+#   - 需要最稳定的FSDP配置
+#   - 调试CUDA/PyTorch兼容性问题
+#
+# 如果这个配置还是失败，建议：
+#   1. 切换到 ddp_config.yaml（最稳定）
+#   2. 检查CUDA/PyTorch版本兼容性
+#   3. 重装PyTorch
+#
+# ==============================================================================
+
+compute_environment: LOCAL_MACHINE
+debug: false
+distributed_type: FSDP
+downcast_bf16: 'no'
+machine_rank: 0
+main_training_function: main
+mixed_precision: bf16
+num_machines: 1
+num_processes: 4
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false
+
+# ==============================================================================
+# FSDP配置 - 最简化版本
+# ==============================================================================
+
+fsdp_config:
+  # Wrapping策略：基于参数数量（最简单）
+  fsdp_auto_wrap_policy: SIZE_BASED_WRAP
+  fsdp_min_num_params: 100000000  # 100M参数以上的模块会被wrap
+  
+  # Prefetch策略：向后prefetch（标准设置）
+  fsdp_backward_prefetch_policy: BACKWARD_PRE
+  fsdp_forward_prefetch: false
+  
+  # State dict类型：分片保存（快速）
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  
+  # CPU高效加载：启用
+  fsdp_cpu_ram_efficient_loading: true
+  
+  # 使用原始参数名（方便调试）
+  fsdp_use_orig_params: true
+  
+  # 同步模块状态（确保所有进程一致）
+  fsdp_sync_module_states: true
+  
+  # ⭐ 关键：关闭可能导致CUDA错误的高级功能
+  fsdp_offload_params: false           # 不offload到CPU（避免传输错误）
+  fsdp_activation_checkpointing: false # 不使用activation checkpointing（避免内存操作错误）
+  
+  # Sharding策略：默认FULL_SHARD（最大内存节省）
+  # 如果还有问题，可以改为 SHARD_GRAD_OP（更保守）
+  fsdp_sharding_strategy: FULL_SHARD
+
+# ==============================================================================
+# 使用说明
+# ==============================================================================
+#
+# 在 debug_run_multi.sh 中使用此配置：
+#
+#   ACCELERATE_CONFIG="configs/fsdp_config_minimal.yaml"
+#
+# 如果训练成功：
+#   - 可以尝试启用 fsdp_activation_checkpointing: true（节省显存）
+#   - 或切换到 fsdp_config_transformer.yaml（更优性能）
+#
+# 如果仍然失败：
+#   - 切换到 configs/ddp_config.yaml
+#   - 检查 CUDA_ERROR_TROUBLESHOOTING.md
+#
+# ==============================================================================
