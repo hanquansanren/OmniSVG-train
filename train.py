@@ -996,8 +996,26 @@ def train(args, config: OmniSVGConfig):
                         if accelerator.is_main_process:
                             print(f"✓ Validation completed, continuing training...\n")
                         
-                        if accelerator.is_main_process and val_loss < best_val_loss:
-                            best_val_loss = val_loss
+                        # 检查是否是最佳模型（所有进程都需要参与判断）
+                        # 使用broadcast确保所有进程知道是否需要保存
+                        is_best_model = val_loss < best_val_loss
+                        
+                        # 广播决定到所有进程（避免进程分歧）
+                        if torch.distributed.is_initialized():
+                            is_best_tensor = torch.tensor(
+                                [1.0 if is_best_model else 0.0], 
+                                device=accelerator.device
+                            )
+                            torch.distributed.broadcast(is_best_tensor, src=0)
+                            is_best_model = is_best_tensor.item() > 0.5
+                        
+                        # 所有进程都调用save_checkpoint（关键！）
+                        if is_best_model:
+                            if accelerator.is_main_process:
+                                best_val_loss = val_loss
+                                print(f"\n🌟 New best model! Val loss: {val_loss:.4f}")
+                            
+                            # 所有进程都必须调用，即使只有主进程实际保存
                             save_checkpoint(
                                 output_dir, global_step, epoch,
                                 model, optimizer, lr_scheduler,
@@ -1235,8 +1253,10 @@ def save_checkpoint(
         # 即使保存失败也继续训练
         # 只记录警告，不中断训练
     
-    # 最后再次同步，确保所有进程完成
-    accelerator.wait_for_everyone()
+    finally:
+        # 确保所有进程都同步，即使发生异常
+        # 这是关键！避免某些进程提前退出导致进程不匹配
+        accelerator.wait_for_everyone()
 
 
 # ============================================================================
