@@ -648,6 +648,14 @@ def compute_task_specific_losses(
 def train(args, config: OmniSVGConfig):
     """Main training function."""
     
+    # 设置NCCL超时时间（对于大模型checkpoint保存很重要）
+    # 默认10分钟可能不够，尤其是FSDP需要gather所有参数时
+    # 设置为30分钟（1800秒）
+    import os
+    if 'NCCL_TIMEOUT' not in os.environ:
+        os.environ['NCCL_TIMEOUT'] = '1800'  # 30分钟
+        print(f"Set NCCL_TIMEOUT to 1800 seconds (30 minutes) for FSDP checkpoint saving")
+    
     # Initialize accelerator
     accelerator = Accelerator(
         gradient_accumulation_steps=config.training.gradient_accumulation_steps
@@ -1127,41 +1135,44 @@ def save_checkpoint(
     accelerator: Accelerator,
     is_best: bool = False,
 ):
-    """Save training checkpoint."""
-    accelerator.wait_for_everyone()
-    
-    if not accelerator.is_main_process:
-        return
-    
-    accelerator.print(f"Saving checkpoint at step {step}")
-    
-    unwrapped_model = accelerator.unwrap_model(model)
+    """Save training checkpoint using Accelerate's save_state for FSDP compatibility."""
+    print(f"Saving checkpoint at step {step}...")
     
     if is_best:
-        ckpt_path = output_dir / "best_model"
+        ckpt_name = "best_model"
     else:
-        ckpt_path = output_dir / f"step_{step}"
+        ckpt_name = f"step_{step}"
     
-    ckpt_path.mkdir(parents=True, exist_ok=True)
+    ckpt_path = output_dir / ckpt_name
     
-    # Save model
-    torch.save(unwrapped_model.state_dict(), ckpt_path / "pytorch_model.bin")
+    # 使用Accelerate的save_state方法，自动处理FSDP/DDP的checkpoint保存
+    # 这个方法会正确处理FSDP的状态字典收集，避免NCCL超时
+    try:
+        # save_state会自动在所有进程间同步，不需要manual wait
+        accelerator.save_state(str(ckpt_path))
+        
+        # 只在主进程保存额外信息
+        if accelerator.is_main_process:
+            # Save training state info
+            info_dict = {
+                'step': step,
+                'epoch': epoch,
+                'is_best': is_best,
+            }
+            
+            # save_state 已经创建了目录，直接保存额外信息
+            with open(ckpt_path / "training_info.json", 'w') as f:
+                json.dump(info_dict, f, indent=2)
+            
+            print(f"✓ Checkpoint saved to: {ckpt_path}")
     
-    # Save optimizer and scheduler
-    torch.save(optimizer.state_dict(), ckpt_path / "optimizer.pt")
-    torch.save(lr_scheduler.state_dict(), ckpt_path / "scheduler.pt")
+    except Exception as e:
+        print(f"⚠ Warning: Failed to save checkpoint: {e}")
+        import traceback
+        traceback.print_exc()
     
-    # Save training state
-    torch.save({
-        'step': step,
-        'epoch': epoch,
-    }, ckpt_path / "training_state.pt")
-    
-    # Save info
-    with open(ckpt_path / "info.txt", 'w') as f:
-        f.write(f"step: {step}\n")
-        f.write(f"epoch: {epoch}\n")
-        f.write(f"is_best: {is_best}\n")
+    # 确保所有进程同步完成
+    accelerator.wait_for_everyone()
 
 
 # ============================================================================

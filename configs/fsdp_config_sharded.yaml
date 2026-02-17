@@ -1,0 +1,68 @@
+# FSDP Configuration - Sharded State Dict (快速保存版本)
+# 使用分片保存策略，避免checkpoint保存时的NCCL超时
+
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+
+fsdp_config:
+  # 基于Transformer层的包裹策略
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  
+  # Qwen2.5-VL的正确层类名（已验证）
+  fsdp_transformer_layer_cls_to_wrap: Qwen2_5_VLDecoderLayer
+  
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_backward_prefetch: BACKWARD_PRE
+  fsdp_forward_prefetch: false
+  
+  # ⭐ 关键区别：使用SHARDED_STATE_DICT而不是FULL_STATE_DICT
+  # SHARDED_STATE_DICT: 每个GPU只保存自己的分片，避免gather所有参数
+  # 优点：保存速度快，不会NCCL超时
+  # 缺点：加载时需要用FSDP，不能直接用普通方式加载
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  
+  fsdp_sync_module_states: true
+  fsdp_use_orig_params: true
+  fsdp_cpu_ram_efficient_loading: true
+  fsdp_offload_params: false
+  
+  # FSDP原生的Activation Checkpointing
+  fsdp_activation_checkpointing: true
+
+mixed_precision: bf16
+downcast_bf16: 'no'
+num_processes: 4
+gpu_ids: all
+use_cpu: false
+num_machines: 1
+machine_rank: 0
+main_process_ip: null
+main_process_port: null
+main_training_function: main
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+
+# ==============================================================================
+# 说明
+# ==============================================================================
+# 
+# FULL_STATE_DICT vs SHARDED_STATE_DICT:
+# 
+# FULL_STATE_DICT (fsdp_config_transformer.yaml):
+# - 保存：在主进程gather所有参数，保存完整模型
+# - 优点：兼容性好，可以在任何环境加载
+# - 缺点：保存慢，可能NCCL超时（尤其是大模型）
+# 
+# SHARDED_STATE_DICT (此配置):
+# - 保存：每个GPU保存自己的分片，无需gather
+# - 优点：保存快，避免NCCL超时
+# - 缺点：加载时需要FSDP环境，checkpoint体积是GPU数量倍
+# 
+# 推荐使用场景：
+# - 训练过程中频繁保存 → SHARDED_STATE_DICT (此配置)
+# - 最终模型保存 → FULL_STATE_DICT (手动转换)
+# 
+# ==============================================================================

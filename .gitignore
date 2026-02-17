@@ -135,4 +135,5 @@ backup/*
 examples/*
 *.out
 *.out_perf
+*.pyc
 
