@@ -34,7 +34,7 @@ data:
 # Training Configuration - 性能优化
 # ==============================================================================
 training:
-  learning_rate: 4.0e-4  # ⭐ 4卡学习率线性缩放：1e-4 * 4 = 4e-4
+  learning_rate: 1.0e-4  # ⭐ 4卡学习率线性缩放：1e-4 * 4 = 4e-4
   weight_decay: 0.1
   max_grad_norm: 1.0
   

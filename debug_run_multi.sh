@@ -231,8 +231,8 @@ if [ "$DISABLE_NCCL_P2P_IB" = "true" ]; then
     export NCCL_IB_DISABLE=1
 else
     echo "Enabling NCCL P2P and IB (A100/A6000 mode)"
-    export NCCL_P2P_DISABLE=0
-    export NCCL_IB_DISABLE=0
+    # export NCCL_P2P_DISABLE=0
+    # export NCCL_IB_DISABLE=0
 fi
 
 # ⭐⭐⭐ 重要：清理GPU状态，防止CUDA错误 ⭐⭐⭐
