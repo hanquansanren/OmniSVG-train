@@ -243,10 +243,10 @@ sleep 2
 echo "✓ GPU cleanup completed"
 echo ""
 
-# ⭐ 禁用FSDP和分布式训练的详细日志输出
-export TORCH_DISTRIBUTED_LOG_LEVEL=WARNING            # 只显示警告和错误
-export TORCH_CPP_LOG_LEVEL=WARNING                    # C++层日志级别
-export FSDP_LOG_LEVEL=WARNING                         # FSDP日志级别
+# # ⭐ 禁用FSDP和分布式训练的详细日志输出
+# export TORCH_DISTRIBUTED_LOG_LEVEL=WARNING            # 只显示警告和错误
+# export TORCH_CPP_LOG_LEVEL=WARNING                    # C++层日志级别
+# export FSDP_LOG_LEVEL=WARNING                         # FSDP日志级别
 
 # ⭐ CUDA调试环境变量 - 训练稳定后关闭以提升性能
 # 如果遇到CUDA错误，取消注释下面2行以获取详细错误信息
