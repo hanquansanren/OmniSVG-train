@@ -43,7 +43,7 @@ training:
   # ⭐ 关键优化：减少gradient accumulation
   # batch_size=2 * 4 GPU * grad_accum=2 = 有效batch 16
   # (之前：1 * 4 * 4 = 16，现在一样但速度更快)
-  gradient_accumulation_steps: 2
+  gradient_accumulation_steps: 4
   
   scheduler:
     type: "cosine"
@@ -63,7 +63,7 @@ training:
 logging:
   log_every: 20          # 稍微减少日志频率
   save_every: 5000       # ⭐ 减少checkpoint保存频率（之前2000）
-  val_every: 1000        # ⭐ 大幅减少验证频率（之前50！）
+  val_every: 50        # ⭐ 大幅减少验证频率（之前50！）
 
 # ==============================================================================
 # DataLoader Configuration - A100优化

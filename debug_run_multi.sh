@@ -25,7 +25,7 @@ DISABLE_NCCL_P2P_IB="false"
 NUM_GPUS=4
 
 # Batch size per GPU
-BATCH_SIZE=2
+BATCH_SIZE=1
 
 # Maximum SVG sequence length
 # MAX_SEQ_LENGTH=2048
@@ -89,13 +89,13 @@ TRAIN_CONFIG_FILE="train_config_zhuan_fast.yaml"
 # ACCELERATE_CONFIG="configs/zero_stage2.yaml"         # DeepSpeed ZeRO Stage 2 (与PyTorch 2.5.0不兼容)
 # ACCELERATE_CONFIG="configs/fsdp_config.yaml"         # FSDP SIZE_BASED (与PyTorch 2.5.0的DTensor有冲突)
 
-ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
+ACCELERATE_CONFIG="configs/fsdp_config_performance.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
 # ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
 # ACCELERATE_CONFIG="configs/fsdp_config_minimal.yaml"  # FSDP 最简化配置（用于排查CUDA错误）
 # ACCELERATE_CONFIG="configs/fsdp_config_transformer.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
-# # "configs/fsdp_config_sharded.yaml"
-# # "configs/fsdp_config_transformer.yaml"
-
+# "configs/fsdp_config_sharded.yaml"
+# "configs/fsdp_config_transformer.yaml"
+# "configs/fsdp_config_performance.yaml"
 
 # Mixed precision training
 MIXED_PRECISION="bf16"
