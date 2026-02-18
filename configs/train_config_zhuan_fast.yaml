@@ -1,0 +1,98 @@
+# OmniSVG Training Configuration - 高性能版本 (4xA100优化)
+# 针对HPC多卡A100训练的性能优化配置
+
+# ==============================================================================
+# Model Configuration
+# ==============================================================================
+model:
+  size: "4B"
+  use_flash_attn: true
+  torch_dtype: "bfloat16"
+  
+  # FSDP activation checkpointing会自动节省显存
+  # A100 40GB可以不开gradient_checkpointing
+  use_gradient_checkpointing: false
+
+# ==============================================================================
+# Data Configuration  
+# ==============================================================================
+data:
+  data_dir: "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_zhuan"
+  
+  # A100可以用更大的图像尺寸
+  target_image_size: 224
+  
+  # 序列长度保持合理值
+  max_seq_length: 2048
+  text_max_length: 800
+  
+  text_source_probabilities:
+    detail_description: 0.60
+    brief_description: 0.40
+
+# ==============================================================================
+# Training Configuration - 性能优化
+# ==============================================================================
+training:
+  learning_rate: 4.0e-4  # ⭐ 4卡学习率线性缩放：1e-4 * 4 = 4e-4
+  weight_decay: 0.1
+  max_grad_norm: 1.0
+  
+  epochs: 8
+  
+  # ⭐ 关键优化：减少gradient accumulation
+  # batch_size=2 * 4 GPU * grad_accum=2 = 有效batch 16
+  # (之前：1 * 4 * 4 = 16，现在一样但速度更快)
+  gradient_accumulation_steps: 2
+  
+  scheduler:
+    type: "cosine"
+    warmup_steps: 500
+    num_cycles: 0.5
+  
+  task_balance:
+    initial_text_only_ratio: 0.0
+  
+  loss_weights:
+    text_task: 0
+    image_task: 1.0
+
+# ==============================================================================
+# Logging and Checkpointing - 性能优化
+# ==============================================================================
+logging:
+  log_every: 20          # 稍微减少日志频率
+  save_every: 5000       # ⭐ 减少checkpoint保存频率（之前2000）
+  val_every: 1000        # ⭐ 大幅减少验证频率（之前50！）
+
+# ==============================================================================
+# DataLoader Configuration - A100优化
+# ==============================================================================
+dataloader:
+  num_workers: 8         # ⭐ 增加workers（4卡需要更多）
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4     # ⭐ 增加prefetch（之前2）
+
+# ==============================================================================
+# Random Seed
+# ==============================================================================
+seed: 2023
+
+# ==============================================================================
+# 性能说明
+# ==============================================================================
+# 优化项：
+# 1. ✅ 增加batch_size: 1 -> 2 (配合debug_run_multi.sh修改)
+# 2. ✅ 减少gradient_accumulation: 4 -> 2 (保持有效batch=16)
+# 3. ✅ 启用NCCL P2P (在debug_run_multi.sh设置)
+# 4. ✅ 减少validation频率: 50 -> 1000
+# 5. ✅ 减少checkpoint频率: 2000 -> 5000
+# 6. ✅ 增加DataLoader workers: 4 -> 8
+# 7. ✅ 增加prefetch_factor: 2 -> 4
+# 8. ✅ 学习率线性缩放: 1e-4 -> 4e-4 (4卡)
+#
+# 预期提升：
+# - 5小时/epoch -> 约40-60分钟/epoch (5-7x加速)
+# - 比单卡3小时快2-4倍
+# ==============================================================================

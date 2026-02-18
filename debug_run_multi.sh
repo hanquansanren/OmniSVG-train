@@ -18,13 +18,14 @@ USE_FLASH_ATTN="true"
 
 # Disable P2P and IB for RTX 4000 series compatibility
 # Set to "true" for RTX 4000 series, "false" for A100/H100
-DISABLE_NCCL_P2P_IB="true" 
+# ⭐ A100支持NVLink P2P，必须启用以获得最佳性能！
+DISABLE_NCCL_P2P_IB="false" 
 
 # Number of GPUs to use
 NUM_GPUS=4
 
 # Batch size per GPU
-BATCH_SIZE=1
+BATCH_SIZE=2
 
 # Maximum SVG sequence length
 # MAX_SEQ_LENGTH=2048
@@ -78,9 +79,10 @@ CONFIG_DIR="./configs"
 # Training config file name
 # Options: 
 #   - "train_config.yaml" (standard configuration)
+#   - "train_config_zhuan.yaml" (原始配置)
+#   - "train_config_zhuan_fast.yaml" (⭐ A100性能优化版本)
 #   - "train_config_low_memory.yaml" (optimized for low VRAM)
-#   - Or create your own custom config file
-TRAIN_CONFIG_FILE="train_config_zhuan.yaml"
+TRAIN_CONFIG_FILE="train_config_zhuan_fast.yaml"
 
 # Accelerate config file (for DeepSpeed, FSDP, etc.)
 # Leave empty for default settings 多卡训练时需要配置
