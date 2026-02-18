@@ -900,6 +900,8 @@ def train(args, config: OmniSVGConfig):
     print(f"Validate Every:   {config.training.val_every} steps")
     print(f"{'='*60}\n")
     
+    # ⚡ 性能优化：这些列表现在存储detached tensor而不是float
+    # 只在log时才转换为Python数值，减少CPU-GPU同步开销
     text_losses = []
     image_losses = []
     grad_norms = []
@@ -949,12 +951,13 @@ def train(args, config: OmniSVGConfig):
                 loss = (config.training.text_loss_weight * text_loss + 
                        config.training.image_loss_weight * image_loss)
                 
-                # Track losses
-                current_loss = loss.item()
-                if text_loss.item() > 0:
-                    text_losses.append(text_loss.item())
-                if image_loss.item() > 0:
-                    image_losses.append(image_loss.item())
+                # ⚡ 性能优化：保存tensor而不是立即.item()，避免CPU-GPU同步
+                # 只在需要记录日志时才转换为Python数值
+                current_loss = loss.detach()  # 保存detached tensor
+                if text_loss > 0:
+                    text_losses.append(text_loss.detach())
+                if image_loss > 0:
+                    image_losses.append(image_loss.detach())
                 
                 # Backward pass
                 accelerator.backward(loss)
@@ -964,8 +967,12 @@ def train(args, config: OmniSVGConfig):
                         model.parameters(), 
                         max_norm=config.training.max_grad_norm
                     )
+                    # ⚡ 性能优化：保存tensor而不是立即转换
                     if grad_norm is not None:
-                        grad_norms.append(grad_norm.item() if hasattr(grad_norm, 'item') else grad_norm)
+                        if hasattr(grad_norm, 'detach'):
+                            grad_norms.append(grad_norm.detach())
+                        else:
+                            grad_norms.append(grad_norm)  # 已经是标量
                     
                     optimizer.step()
                     lr_scheduler.step()
@@ -973,12 +980,15 @@ def train(args, config: OmniSVGConfig):
                     
                     global_step += 1
                     
-                    # 更新progress bar，显示当前loss
-                    progress_bar.set_postfix({
-                        'loss': f'{current_loss:.4f}',
-                        'step': global_step
-                    })
-                    progress_bar.update(1)
+                    # ⚡ 性能优化：只在需要显示时才.item()（每10步更新一次进度条）
+                    if global_step % 10 == 0:
+                        # 这里才转换为Python数值用于显示
+                        display_loss = current_loss.item() if hasattr(current_loss, 'item') else current_loss
+                        progress_bar.set_postfix({
+                            'loss': f'{display_loss:.4f}',
+                            'step': global_step
+                        })
+                        progress_bar.update(10)
                     
                     # Logging
                     if global_step % config.training.log_every == 0:
@@ -1162,21 +1172,40 @@ def validate(
 def log_metrics(
     writer: SummaryWriter,
     step: int,
-    text_losses: List[float],
-    image_losses: List[float],
-    grad_norms: List[float],
+    text_losses: List,  # 现在接受tensor列表
+    image_losses: List,  # 现在接受tensor列表
+    grad_norms: List,  # 现在接受tensor列表
     lr_scheduler: Any,
     accelerator: Accelerator,
     use_wandb: bool = False,
 ):
-    """Log training metrics to TensorBoard and Weights & Biases."""
+    """Log training metrics to TensorBoard and Weights & Biases.
+    
+    ⚡ 性能优化：接受tensor列表，只在这里转换为Python数值
+    这样避免了训练循环中的频繁CPU-GPU同步
+    """
     if not accelerator.is_main_process:
         return
     
-    avg_text = np.mean(text_losses) if text_losses else 0
-    avg_image = np.mean(image_losses) if image_losses else 0
-    avg_total = np.mean(text_losses + image_losses) if (text_losses + image_losses) else 0
-    avg_grad = np.mean(grad_norms) if grad_norms else 0
+    # ⚡ 只在这里转换tensor为数值（一次性批量转换）
+    def to_float_list(tensor_list):
+        """将tensor列表转换为float列表"""
+        if not tensor_list:
+            return []
+        # 批量转换：stack所有tensor，一次性.item()
+        if hasattr(tensor_list[0], 'item'):
+            return [t.item() for t in tensor_list]
+        else:
+            return list(tensor_list)  # 已经是数值
+    
+    text_losses_float = to_float_list(text_losses)
+    image_losses_float = to_float_list(image_losses)
+    grad_norms_float = to_float_list(grad_norms)
+    
+    avg_text = np.mean(text_losses_float) if text_losses_float else 0
+    avg_image = np.mean(image_losses_float) if image_losses_float else 0
+    avg_total = np.mean(text_losses_float + image_losses_float) if (text_losses_float + image_losses_float) else 0
+    avg_grad = np.mean(grad_norms_float) if grad_norms_float else 0
     current_lr = lr_scheduler.get_last_lr()[0]
     
     # 打印训练指标到控制台

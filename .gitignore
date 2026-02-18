@@ -136,4 +136,6 @@ examples/*
 *.out
 *.out_perf
 *.pyc
+*.md
+
 
