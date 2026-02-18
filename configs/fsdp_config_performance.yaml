@@ -15,7 +15,7 @@ fsdp_config:
   # HYBRID_SHARD: 节点内FULL_SHARD，节点间复制
   # 单节点4卡场景下，等同于FULL_SHARD但通信更高效
   # 如果只有单节点，可以考虑SHARD_GRAD_OP（只分片梯度，参数复制）
-  fsdp_sharding_strategy: SHARD_GRAD_OP
+  fsdp_sharding_strategy: HYBRID_SHARD
   
   # ⭐ 性能优化：启用forward prefetch
   # 在计算当前层的同时预取下一层参数，减少等待时间

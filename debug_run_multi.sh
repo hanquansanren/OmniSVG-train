@@ -25,7 +25,7 @@ USE_FLASH_ATTN="true"
 #   - 如遇Triton错误: DISABLE_TORCH_COMPILE="true"
 # 
 # 安装兼容Triton: pip uninstall -y triton && pip install triton==3.1.0
-DISABLE_TORCH_COMPILE="false"
+DISABLE_TORCH_COMPILE="true"
 
 # Disable P2P and IB for RTX 4000 series compatibility
 # Set to "true" for RTX 4000 series, "false" for A100/H100
@@ -93,7 +93,7 @@ CONFIG_DIR="./configs"
 #   - "train_config_zhuan.yaml" (原始配置)
 #   - "train_config_zhuan_fast.yaml" (⭐ A100性能优化版本)
 #   - "train_config_low_memory.yaml" (optimized for low VRAM)
-TRAIN_CONFIG_FILE="train_config_zhuan_fast.yaml"
+TRAIN_CONFIG_FILE="train_config_zhuan_a100.yaml"
 
 # Accelerate config file (for DeepSpeed, FSDP, etc.)
 # Leave empty for default settings 多卡训练时需要配置
@@ -269,7 +269,7 @@ if [ "$DISABLE_TORCH_COMPILE" = "true" ]; then
     echo "   训练速度：约51分钟/epoch（5.9x vs原始）"
 else
     unset DISABLE_TORCH_COMPILE
-    echo "🔥 torch.compile() 已启用"
+    echo "🔥 torch.compile() enabling"
     echo "   首次编译需要5-10分钟，之后约40-43分钟/epoch（7x vs原始）"
     echo "   需要Triton 3.1.0：pip install triton==3.1.0"
 fi

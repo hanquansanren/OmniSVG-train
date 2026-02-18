@@ -28,14 +28,14 @@ import sys
 
 # ⭐⭐⭐ 关键：在导入torch之前设置NCCL超时环境变量 ⭐⭐⭐
 # PyTorch 2.5.0 在导入时就初始化NCCL，必须提前设置这些变量
-# 
+
 # 注意：这些必须在 import torch 之前设置！
-if "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC" not in os.environ:
-    os.environ["TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC"] = "3600"  # 60分钟
-if "TORCH_NCCL_BLOCKING_WAIT" not in os.environ:
-    os.environ["TORCH_NCCL_BLOCKING_WAIT"] = "1"
-if "TORCH_NCCL_ASYNC_ERROR_HANDLING" not in os.environ:
-    os.environ["TORCH_NCCL_ASYNC_ERROR_HANDLING"] = "1"
+# if "TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC" not in os.environ:
+#     os.environ["TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC"] = "3600"  # 60分钟
+# if "TORCH_NCCL_BLOCKING_WAIT" not in os.environ:
+#     os.environ["TORCH_NCCL_BLOCKING_WAIT"] = "1"
+# if "TORCH_NCCL_ASYNC_ERROR_HANDLING" not in os.environ:
+#     os.environ["TORCH_NCCL_ASYNC_ERROR_HANDLING"] = "1"
 
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
