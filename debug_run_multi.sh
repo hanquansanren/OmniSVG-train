@@ -86,9 +86,14 @@ TRAIN_CONFIG_FILE="train_config_zhuan.yaml"
 # Leave empty for default settings 多卡训练时需要配置
 # ACCELERATE_CONFIG="configs/zero_stage2.yaml"         # DeepSpeed ZeRO Stage 2 (与PyTorch 2.5.0不兼容)
 # ACCELERATE_CONFIG="configs/fsdp_config.yaml"         # FSDP SIZE_BASED (与PyTorch 2.5.0的DTensor有冲突)
-ACCELERATE_CONFIG="configs/ddp_config.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
+
+ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
 # ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
 # ACCELERATE_CONFIG="configs/fsdp_config_minimal.yaml"  # FSDP 最简化配置（用于排查CUDA错误）
+# ACCELERATE_CONFIG="configs/fsdp_config_transformer.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
+# # "configs/fsdp_config_sharded.yaml"
+# # "configs/fsdp_config_transformer.yaml"
+
 
 # Mixed precision training
 MIXED_PRECISION="bf16"
@@ -252,13 +257,13 @@ export FSDP_LOG_LEVEL=WARNING                         # FSDP日志级别
 # ⭐ 关键：设置NCCL超时时间 - PyTorch 2.4+ 使用新的环境变量
 # 默认10分钟(600秒)对于FSDP checkpoint保存可能不够
 # 
-# PyTorch 2.4+ 需要使用这些环境变量（以毫秒为单位）：
-export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=3600         # 心跳超时：60分钟
-export TORCH_NCCL_BLOCKING_WAIT=1                     # 使用阻塞等待（更稳定）
-export TORCH_NCCL_ASYNC_ERROR_HANDLING=1              # 异步错误处理
+# # PyTorch 2.4+ 需要使用这些环境变量（以毫秒为单位）：
+# export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=3600         # 心跳超时：60分钟
+# export TORCH_NCCL_BLOCKING_WAIT=1                     # 使用阻塞等待（更稳定）
+# export TORCH_NCCL_ASYNC_ERROR_HANDLING=1              # 异步错误处理
 
-# 旧版本兼容（PyTorch < 2.4）
-export NCCL_TIMEOUT=3600
+# # 旧版本兼容（PyTorch < 2.4）
+# export NCCL_TIMEOUT=3600
 
 echo "⚙️  训练配置:"
 echo "  - 日志级别: WARNING (禁用FSDP详细输出)"
@@ -275,6 +280,8 @@ echo ""
 echo "Starting training..."
 echo "Command: ${ACCELERATE_CMD} train.py ${CMD_ARGS}"
 echo ""
+
+# python diagnose_cuda.py
 
 ${ACCELERATE_CMD} train.py ${CMD_ARGS}
 
