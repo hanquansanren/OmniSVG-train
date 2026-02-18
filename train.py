@@ -838,6 +838,40 @@ def train(args, config: OmniSVGConfig):
         model, optimizer, lr_scheduler, train_dataloader, val_dataloader
     )
     
+    # ⚡⚡⚡ torch.compile() 编译优化 - PyTorch 2.x特性 ⚡⚡⚡
+    # 首次编译会较慢（5-10分钟），但之后每步训练速度提升10-30%
+    # 
+    # 注意：这是实验性功能，如果遇到问题可以注释掉
+    try:
+        if accelerator.is_main_process:
+            print("\n" + "="*60)
+            print("🔥 Compiling model with torch.compile()...")
+            print("   首次编译需要5-10分钟，请耐心等待...")
+            print("   编译后每步训练速度将提升10-30%")
+            print("="*60 + "\n")
+        
+        # 编译模型
+        # mode选项:
+        #   - "default": 平衡编译时间和性能
+        #   - "reduce-overhead": 减少Python开销，适合小batch（推荐）
+        #   - "max-autotune": 最大性能，但编译时间很长
+        model = torch.compile(
+            model, 
+            mode="reduce-overhead",  # 推荐：减少Python开销
+            fullgraph=False,  # FSDP/DDP不支持fullgraph
+            dynamic=True,  # 支持动态shape
+        )
+        
+        if accelerator.is_main_process:
+            print("✓ Model compiled successfully!")
+            print("  后续训练步骤将自动加速\n")
+            
+    except Exception as e:
+        # 如果编译失败，继续使用未编译的模型
+        if accelerator.is_main_process:
+            print(f"\n⚠️  torch.compile() 失败，将使用未编译模型: {e}")
+            print("   训练将继续，但速度不会有torch.compile的加速\n")
+    
     # Setup logging
     output_dir = Path(args.output_dir) / args.project_name
     output_dir.mkdir(parents=True, exist_ok=True)
