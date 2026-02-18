@@ -16,6 +16,17 @@ MODEL_SIZE="4B"
 # Set to "true" or "false"
 USE_FLASH_ATTN="true"  
 
+# ⭐ torch.compile() 编译优化（PyTorch 2.x）
+# Set to "false" to enable torch.compile (需要Triton 3.1.0)
+# Set to "true" to disable torch.compile
+# 
+# 推荐配置：
+#   - PyTorch 2.5.0 + Triton 3.1.0: DISABLE_TORCH_COMPILE="false"
+#   - 如遇Triton错误: DISABLE_TORCH_COMPILE="true"
+# 
+# 安装兼容Triton: pip uninstall -y triton && pip install triton==3.1.0
+DISABLE_TORCH_COMPILE="false"
+
 # Disable P2P and IB for RTX 4000 series compatibility
 # Set to "true" for RTX 4000 series, "false" for A100/H100
 # ⭐ A100支持NVLink P2P，必须启用以获得最佳性能！
@@ -249,6 +260,20 @@ echo ""
 # export TORCH_DISTRIBUTED_LOG_LEVEL=WARNING            # 只显示警告和错误
 # export TORCH_CPP_LOG_LEVEL=WARNING                    # C++层日志级别
 # export FSDP_LOG_LEVEL=WARNING                         # FSDP日志级别
+
+# ⭐ torch.compile() 控制
+# 如果DISABLE_TORCH_COMPILE="true"，设置环境变量禁用编译
+if [ "$DISABLE_TORCH_COMPILE" = "true" ]; then
+    export DISABLE_TORCH_COMPILE=1
+    echo "ℹ️  torch.compile() 已禁用"
+    echo "   训练速度：约51分钟/epoch（5.9x vs原始）"
+else
+    unset DISABLE_TORCH_COMPILE
+    echo "🔥 torch.compile() 已启用"
+    echo "   首次编译需要5-10分钟，之后约40-43分钟/epoch（7x vs原始）"
+    echo "   需要Triton 3.1.0：pip install triton==3.1.0"
+fi
+echo ""
 
 # ⭐ CUDA调试环境变量 - 训练稳定后关闭以提升性能
 # 如果遇到CUDA错误，取消注释下面2行以获取详细错误信息
