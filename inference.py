@@ -196,8 +196,9 @@ def parse_args():
                         help=f'Model size to use (default: {DEFAULT_MODEL_SIZE})')
     parser.add_argument('--model-path', type=str, default="/data/phd23_weiguang_zhang/works/svg/qwen25vl3b",
                         help='Local path or HuggingFace repo ID for Qwen model (overrides config)')
-    parser.add_argument('--weight-path', type=str, default="output/omnisvg_4b_20260210_022748/step_3000",
+    parser.add_argument('--weight-path', type=str, default="/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e",
     # "output/omnisvg_4b_20260210_022748/step_27000/pytorch_model.bin",
+    # "output/omnisvg_4b_20260210_022748/step_3000",
     # "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e",
                         help='Local path or HuggingFace repo ID for OmniSVG weights (overrides config)')
     
@@ -222,10 +223,10 @@ def parse_args():
                         help='Do not replace background')
     
     # Output options
-    parser.add_argument('--save-svg', action='store_true', default=True,
+    parser.add_argument('--save-svg', action='store_true', default=False,
                         help='Save SVG code files (default: True)')
-    parser.add_argument('--no-save-svg', action='store_false', dest='save_svg',
-                        help='Do not save SVG code files')
+    # parser.add_argument('--no-save-svg', action='store_false', dest='save_svg',
+    #                     help='Do not save SVG code files')
     parser.add_argument('--save-png', action='store_true', default=False,
                         help='Also save rendered PNG images')
     parser.add_argument('--save-all-candidates', action='store_true', default=False,
@@ -332,13 +333,13 @@ def load_models(model_size: str, weight_path: str = None, model_path: str = None
     sketch_decoder.load_state_dict(state_dict)
     print("OmniSVG weights loaded successfully!")
     
-    # Move model to GPU if using device_map="auto"
-    # The model should already be distributed by accelerate, but we ensure it's on GPU
     sketch_decoder = sketch_decoder.eval()
-    
-    # Verify the model is on GPU
+    # SketchDecoder 未传 device_map 时 from_pretrained 默认在 CPU；显式搬到 GPU
     if torch.cuda.is_available():
-        print(f"✓ Model successfully loaded on GPU")
+        sketch_decoder = sketch_decoder.to(default_device)
+        print(f"✓ Model on device: {default_device}")
+    else:
+        print("⚠ CUDA 不可用，使用 CPU 推理（较慢）。若本机有 GPU，请检查驱动/CUDA，以及 CUDA_VISIBLE_DEVICES 是否指向存在的卡。")
     
     # Initialize SVG tokenizer with model_size
     svg_tokenizer = SVGTokenizer(CONFIG_PATH, model_size=model_size)

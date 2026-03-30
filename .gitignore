@@ -131,6 +131,7 @@ storage/
 output/*
 output_debug/*
 output_image/*
+output_images/*
 backup/*
 examples/*
 *.out

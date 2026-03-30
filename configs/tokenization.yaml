@@ -45,42 +45,42 @@ models:
       arc_params:
         start_offset: 196436
 
-  # 8B Model (based on Qwen2.5-VL-7B-Instruct)
-  8B:
-    base_vocab_size: 152064
-    extended_vocab_size: 197000
-    base_model: "Qwen/Qwen2.5-VL-7B-Instruct"
-    checkpoint: "OmniSVG/OmniSVG1.1_8B"
+  # # 8B Model (based on Qwen2.5-VL-7B-Instruct)
+  # 8B:
+  #   base_vocab_size: 152064
+  #   extended_vocab_size: 197000
+  #   base_model: "Qwen/Qwen2.5-VL-7B-Instruct"
+  #   checkpoint: "OmniSVG/OmniSVG1.1_8B"
     
-    # Special tokens (computed from base_vocab_size)
-    special_tokens:
-      pad_token_id: 151643
-      bos_token_id: 196999
-      eos_token_id: 196998
+  #   # Special tokens (computed from base_vocab_size)
+  #   special_tokens:
+  #     pad_token_id: 151643
+  #     bos_token_id: 196999
+  #     eos_token_id: 196998
     
-    # SVG token offsets (base_vocab_size + offset)
-    svg_tokens:
-      num_svg_end: 1
-      mask_token_offset: 152065   # base + 1
-      eom_token_offset: 152066    # base + 2
+  #   # SVG token offsets (base_vocab_size + offset)
+  #   svg_tokens:
+  #     num_svg_end: 1
+  #     mask_token_offset: 152065   # base + 1
+  #     eom_token_offset: 152066    # base + 2
       
-      # Commands start at base + 2
-      commands:
-        move: 152066
-        line: 152067
-        curve: 152068
-        arc: 152069
-        close: 152070
+  #     # Commands start at base + 2
+  #     commands:
+  #       move: 152066
+  #       line: 152067
+  #       curve: 152068
+  #       arc: 152069
+  #       close: 152070
       
-      # Coordinate tokens
-      coordinates:
-        bbox_size: 200
-        pix_pad_offset: 152071    # base + 7, after commands
-        coord_pad_offset: 152071
+  #     # Coordinate tokens
+  #     coordinates:
+  #       bbox_size: 200
+  #       pix_pad_offset: 152071    # base + 7, after commands
+  #       coord_pad_offset: 152071
       
-      # Arc parameters
-      arc_params:
-        start_offset: 196564
+  #     # Arc parameters
+  #     arc_params:
+  #       start_offset: 196564
 
 # ==============================================================================
 # Shared configurations
