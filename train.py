@@ -779,7 +779,7 @@ def train(args, config: OmniSVGConfig):
     val_collate = create_collate_fn(
         processor,
         text_len=config.training.text_max_length,
-        text_only_ratio=0.5,
+        text_only_ratio=config.training.text_only_ratio,
     )
     
     # Create dataloaders
@@ -981,6 +981,25 @@ def train(args, config: OmniSVGConfig):
                     pixel_values = pixel_values.to(accelerator.device)
                 if image_grid_thw is not None:
                     image_grid_thw = image_grid_thw.to(accelerator.device)
+                
+                # # Debug: check token bounds before forward
+                # _vocab = 197000
+                # _max_id = input_ids.max().item()
+                # _min_id = input_ids.min().item()
+                # _lbl_valid = labels[labels != -100]
+                # if _max_id >= _vocab or _min_id < 0:
+                #     print(f"[OOB] input_ids range: [{_min_id}, {_max_id}], vocab={_vocab}")
+                #     _oob_mask = (input_ids >= _vocab) | (input_ids < 0)
+                #     _oob_positions = _oob_mask.nonzero(as_tuple=True)
+                #     for b, s in zip(_oob_positions[0][:5], _oob_positions[1][:5]):
+                #         print(f"  input_ids[{b},{s}] = {input_ids[b,s].item()}")
+                # if len(_lbl_valid) > 0:
+                #     _lbl_max = _lbl_valid.max().item()
+                #     _lbl_min = _lbl_valid.min().item()
+                #     if _lbl_max >= _vocab or _lbl_min < 0:
+                #         print(f"[OOB] labels range: [{_lbl_min}, {_lbl_max}], vocab={_vocab}")
+                #         _oob_lbl = (_lbl_valid >= _vocab) | (_lbl_valid < 0)
+                #         print(f"  OOB label values: {_lbl_valid[_oob_lbl][:10].tolist()}")
                 
                 # Forward pass
                 outputs = model(
@@ -1207,11 +1226,13 @@ def validate(
         
         # Weights & Biases logging
         if WANDB_AVAILABLE and wandb.run is not None:
-            wandb.log({
+            val_metrics = {
                 "val/loss_total": avg_total,
                 "val/loss_image": avg_image,
-                "val/loss_text": avg_text,
-            }, step=step)
+            }
+            if avg_text > 0:
+                val_metrics["val/loss_text"] = avg_text
+            wandb.log(val_metrics, step=step)
     
     return avg_total
 
@@ -1379,22 +1400,22 @@ def main():
         description="OmniSVG Training",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Train 4B model with local data
-  accelerate launch train.py --model_size 4B --data_dir ./data
-  
-  # Train 8B model with Flash Attention
-  accelerate launch train.py --model_size 8B --use_flash_attn --data_dir ./data
-  
-  # Train with HuggingFace data (auto-download)
-  accelerate launch train.py --model_size 4B --use_hf_data --datasets illustration icon
-  
-  # Resume from OmniSVG checkpoint (auto-download based on model size)
-  accelerate launch train.py --model_size 4B --resume_from_checkpoint auto
-  
-  # Resume from specific HuggingFace checkpoint
-  accelerate launch train.py --model_size 4B --resume_from_checkpoint OmniSVG/OmniSVG1.1_4B
-"""
+    Examples:
+    # Train 4B model with local data
+    accelerate launch train.py --model_size 4B --data_dir ./data
+    
+    # Train 8B model with Flash Attention
+    accelerate launch train.py --model_size 8B --use_flash_attn --data_dir ./data
+    
+    # Train with HuggingFace data (auto-download)
+    accelerate launch train.py --model_size 4B --use_hf_data --datasets illustration icon
+    
+    # Resume from OmniSVG checkpoint (auto-download based on model size)
+    accelerate launch train.py --model_size 4B --resume_from_checkpoint auto
+    
+    # Resume from specific HuggingFace checkpoint
+    accelerate launch train.py --model_size 4B --resume_from_checkpoint OmniSVG/OmniSVG1.1_4B
+    """
     )
     
     # Model configuration
@@ -1437,7 +1458,7 @@ Examples:
     
     # Logging options
     logging_group = parser.add_argument_group("Logging Configuration")
-    logging_group.add_argument("--use_wandb", action="store_true",
+    logging_group.add_argument("--use_wandb", action="store_true", default=True,
                               help="Enable Weights & Biases for cloud visualization")
     logging_group.add_argument("--wandb_project", type=str, default=None,
                               help="Weights & Biases project name (default: omnisvg-training)")
@@ -1451,12 +1472,12 @@ Examples:
     args = parser.parse_args()
     
     # List datasets and exit
-    if args.list_datasets:
+    if args.list_datasets: # False
         list_available_datasets()
         return
     
     # List models and exit
-    if args.list_models:
+    if args.list_models: # False
         print_model_info()
         return
     
@@ -1464,7 +1485,7 @@ Examples:
     if args.project_name is None:
         args.project_name = f"omnisvg_{args.model_size.lower()}"
     
-    # Load configuration
+    # Load configuration 导入tokenization.yaml和train_config.yaml
     config = OmniSVGConfig(
         config_dir=args.config_dir,
         train_file=args.train_config_file,

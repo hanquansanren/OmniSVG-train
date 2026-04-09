@@ -20,14 +20,14 @@ model:
 # Data Configuration  
 # ==============================================================================
 data:
-  data_dir: "/data/phd23_weiguang_zhang/works/svg/my_zhuan2"
+  # data_dir: "/data/phd23_weiguang_zhang/works/svg/my_zhuan4"
   
   # Reduced image size: 448 -> 336 (saves ~40% image memory)
   target_image_size: 224
   
   # Reduced sequence length: 2048 -> 1536 (saves ~25% sequence memory)
-  max_seq_length: 2048
-  text_max_length: 800
+  # max_seq_length: 2048
+  text_max_length: 50
   
   text_source_probabilities:
     detail_description: 0.60
@@ -37,11 +37,11 @@ data:
 # Training Configuration
 # ==============================================================================
 training:
-  learning_rate: 1.0e-4 # 1.0e-5
+  learning_rate: 0.7e-4 # 1.0e-5
   weight_decay: 0.1 # 0.015
   max_grad_norm: 1.0 # 0.8
   
-  epochs: 2
+  epochs: 3
   # Increased gradient accumulation: 4 -> 8
   # This maintains effective batch size while using less memory per step
   gradient_accumulation_steps: 4
@@ -67,7 +67,7 @@ training:
 # ==============================================================================
 logging:
   log_every: 20 # 10
-  save_every: 2500 # 3000
+  save_every: 2000 # 3000
   val_every: 1000 # 5000
 
 # ==============================================================================

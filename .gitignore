@@ -130,8 +130,10 @@ storage/
 
 output/*
 output_debug/*
+output_debug*/*
 output_image/*
 output_images/*
+output_image_zhuan*/*
 backup/*
 examples/*
 *.out

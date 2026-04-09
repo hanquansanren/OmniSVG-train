@@ -9,10 +9,10 @@ models:
   4B:
     base_vocab_size: 151936
     extended_vocab_size: 197000
-    base_model: "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/qwen25vl3b"
+    base_model: "/data/phd23_weiguang_zhang/works/svg/qwen25vl3b"
     # "/data/phd23_weiguang_zhang/works/svg/qwen25vl3b"
     # "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/qwen25vl3b"
-    checkpoint: ""
+    # checkpoint: ""
     # "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
     
     # Special tokens (computed from base_vocab_size)
@@ -24,26 +24,29 @@ models:
     # SVG token offsets (base_vocab_size + offset)
     svg_tokens:
       num_svg_end: 1
+      # 表示在 eom_token 和第一个命令 token 之间预留了 1 个位置给 "SVG 结束标记"。它本身不是一个命令，但它占了一个 token ID 的位置，导致后面的命令、坐标等都要往后偏移 1。
       mask_token_offset: 151937   # base + 1
       eom_token_offset: 151938    # base + 2
       
-      # Commands start at base + 2
+      # Commands start at eom + num_svg_end = base + 3
+      # (must align with inference CMD_TOKEN_START = num_mask_and_eom + num_svg_end)
       commands:
-        move: 151938
-        line: 151939
-        curve: 151940
-        arc: 151941
-        close: 151942
+        move: 151939
+        line: 151940
+        curve: 151941
+        arc: 151942
+        close: 151943
       
       # Coordinate tokens
+      # pix_pad_offset includes num_svg_end so it aligns with inference COORD_TOKEN_START
       coordinates:
         bbox_size: 200
-        pix_pad_offset: 151943    # base + 7, after commands
-        coord_pad_offset: 151943
+        pix_pad_offset: 151944    # base + 8, after commands + num_svg_end
+        coord_pad_offset: 151944
       
-      # Arc parameters
+      # Arc parameters (includes +num_svg_end to align with inference ARC_PARAM_START+1)
       arc_params:
-        start_offset: 196436
+        start_offset: 196437
 
   # # 8B Model (based on Qwen2.5-VL-7B-Instruct)
   # 8B:
@@ -64,23 +67,23 @@ models:
   #     mask_token_offset: 152065   # base + 1
   #     eom_token_offset: 152066    # base + 2
       
-  #     # Commands start at base + 2
+  #     # Commands start at eom + num_svg_end = base + 3
   #     commands:
-  #       move: 152066
-  #       line: 152067
-  #       curve: 152068
-  #       arc: 152069
-  #       close: 152070
+  #       move: 152067
+  #       line: 152068
+  #       curve: 152069
+  #       arc: 152070
+  #       close: 152071
       
   #     # Coordinate tokens
   #     coordinates:
   #       bbox_size: 200
-  #       pix_pad_offset: 152071    # base + 7, after commands
-  #       coord_pad_offset: 152071
+  #       pix_pad_offset: 152072    # base + 8, after commands + num_svg_end
+  #       coord_pad_offset: 152072
       
-  #     # Arc parameters
+  #     # Arc parameters (includes +num_svg_end to align with inference ARC_PARAM_START+1)
   #     arc_params:
-  #       start_offset: 196564
+  #       start_offset: 196565
 
 # ==============================================================================
 # Shared configurations

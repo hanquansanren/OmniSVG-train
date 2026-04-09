@@ -27,12 +27,13 @@ NUM_GPUS=1
 BATCH_SIZE=1
 
 # Maximum SVG sequence length
-# MAX_SEQ_LENGTH=2048
+MAX_SEQ_LENGTH=2048
 
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
-DATA_DIR="/data/phd23_weiguang_zhang/works/svg/my_zhuan2"
+DATA_DIR="/data/phd23_weiguang_zhang/works/svg/my_zhuan4"
+# "/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
 
 # Output directory for checkpoints and logs
 OUTPUT_DIR="./output"
@@ -45,7 +46,8 @@ PROJECT_NAME="omnisvg_4b_$(date +%Y%m%d_%H%M%S)"
 #   - "": Start from scratch
 #   - "auto": Download and use official OmniSVG checkpoint
 #   - "/path/to/checkpoint": Resume from specific checkpoint
-RESUME_CHECKPOINT=""
+RESUME_CHECKPOINT="output/omnisvg_4b_20260408_020736/step_8000"
+# "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
 # "output/omnisvg_4b_20260214_205636/step_3000"
 # "output/omnisvg_4b_20260209_021556/step_12000"
 # "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
@@ -81,6 +83,7 @@ CONFIG_DIR="./configs"
 #   - "train_config_low_memory.yaml" (optimized for low VRAM)
 #   - Or create your own custom config file
 TRAIN_CONFIG_FILE="train_config_zhuan.yaml"
+# train_config.yaml
 
 # Accelerate config file (for DeepSpeed, FSDP, etc.)
 # Leave empty for default settings 多卡训练时需要配置

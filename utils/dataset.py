@@ -146,11 +146,21 @@ class SVGTokenizer:
                     path_tokens.append(self.CMD_CLOSE)
                     path_tokens.append(self.coord_to_index(end_pos) + self.PIX_PAD)
             
-            # Add color token
-            path_tokens.append(color_token)
+            # Add color token (offset by num_svg_end to align with inference decoder)
+            path_tokens.append(color_token + self.config.num_svg_end)
             all_tokens.extend(path_tokens)
         
-        return np.array(all_tokens, dtype=np.int64)
+        result = np.array(all_tokens, dtype=np.int64)
+        vocab_size = self.config.extended_vocab_size
+        oob = result[result >= vocab_size]
+        if len(oob) > 0:
+            print(f"[TOKEN DEBUG] Out-of-bounds tokens detected! "
+                  f"vocab_size={vocab_size}, max_token={int(result.max())}, "
+                  f"oob_values={oob.tolist()[:10]}")
+            for i, t in enumerate(all_tokens):
+                if t >= vocab_size:
+                    print(f"  token[{i}]={t} (previous tokens: {all_tokens[max(0,i-3):i]})")
+        return result
     
     def add_special_tokens(self, tokens: np.ndarray) -> np.ndarray:
         """Add BOS and EOS tokens to sequence."""
@@ -224,14 +234,14 @@ class OmniSVGDataset(Dataset):
             raise ValueError("Must provide either hf_dataset or meta_file")
         
         # Apply data balancing
-        self._apply_data_balancing()
+        self._apply_data_balancing() # 难例挖掘
         
         # Causal masking setup
         self._setup_causal_masking()
         
         # Tracking
         self.skipped_samples = set()
-        
+
         print(f"Dataset initialized with {len(self)} samples")
     
     def _init_from_hf_dataset(self, dataset):
@@ -258,9 +268,10 @@ class OmniSVGDataset(Dataset):
         
         # Filter by token length (only if len_pix column exists)
         if 'len_pix' in self.meta_df.columns:
+            print(f"Filtering by token length: {self.max_len-50}")
             self.meta_df = self.meta_df[
                 (0 < self.meta_df['len_pix']) & 
-                (self.meta_df['len_pix'] <= self.max_len)
+                (self.meta_df['len_pix'] <= (self.max_len-50))
             ]
         else:
             print("Warning: 'len_pix' column not found in metadata, skipping token length filtering")
@@ -308,9 +319,9 @@ class OmniSVGDataset(Dataset):
         # Length-based duplication factors
         length_intervals = [
             (0, 512, 1.0),
-            (512, 1024, 1.2),
-            (1024, 2048, 1.3),
-            (2048, float('inf'), 1.0),
+            (512, 1024, 1.0),
+            (1024, 2048, 1.0),
+            (2048, float('inf'), 0),
         ]
         
         self.duplicated_indices = []

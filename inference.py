@@ -18,7 +18,7 @@ from huggingface_hub import hf_hub_download
 from decoder import SketchDecoder
 from transformers import AutoTokenizer, AutoProcessor
 from qwen_vl_utils import process_vision_info
-from tokenizer import SVGTokenizer
+from tokenizer import SVGTokenizer, TrainAlignedSVGTokenizer
 
 # Load config
 CONFIG_PATH = './config_zhuan.yaml'
@@ -196,9 +196,14 @@ def parse_args():
                         help=f'Model size to use (default: {DEFAULT_MODEL_SIZE})')
     parser.add_argument('--model-path', type=str, default="/data/phd23_weiguang_zhang/works/svg/qwen25vl3b",
                         help='Local path or HuggingFace repo ID for Qwen model (overrides config)')
-    parser.add_argument('--weight-path', type=str, default="/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e",
-    # "output/omnisvg_4b_20260210_022748/step_27000/pytorch_model.bin",
+    parser.add_argument('--weight-path', type=str, default="output/omnisvg_4b_20260409_045251/step_2000",
+    # "output/omnisvg_4b_20260210_022748/step_33000/pytorch_model.bin",
     # "output/omnisvg_4b_20260210_022748/step_3000",
+    # "output/omnisvg_4b_20260406_081050/step_5000/model.safetensors",
+    # "output/omnisvg_4b_20260407_022123/step_5000",
+    # "output/omnisvg_4b_20260407_175744/step_2000",
+    # "output/omnisvg_4b_20260408_020736/step_8000",
+    # "output/omnisvg_4b_20260409_045251/step_2000",
     # "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e",
                         help='Local path or HuggingFace repo ID for OmniSVG weights (overrides config)')
     
@@ -231,6 +236,12 @@ def parse_args():
                         help='Also save rendered PNG images')
     parser.add_argument('--save-all-candidates', action='store_true', default=False,
                         help='Save all candidates (default: save only the best one)')
+    
+    # Tokenizer selection
+    parser.add_argument('--use-train-tokenizer', action='store_true', default=False,
+                        help='Use TrainAlignedSVGTokenizer (for models trained with configs/tokenization.yaml)')
+    parser.add_argument('--tokenization-config', type=str, default='./configs/tokenization.yaml',
+                        help='Path to tokenization.yaml (used with --use-train-tokenizer)')
     
     # Debug
     parser.add_argument('--verbose', action='store_true', default=False,
@@ -268,7 +279,8 @@ def is_local_path(path: str) -> bool:
     return False
 
 
-def load_models(model_size: str, weight_path: str = None, model_path: str = None):
+def load_models(model_size: str, weight_path: str = None, model_path: str = None,
+                use_train_tokenizer: bool = False, tokenization_config_path: str = None):
     """Load all models for a specific model size."""
     global tokenizer, processor, sketch_decoder, svg_tokenizer, current_model_size
     
@@ -315,22 +327,43 @@ def load_models(model_size: str, weight_path: str = None, model_path: str = None
     print("\n[3/3] Loading OmniSVG weights...")
     
     if is_local_path(weight_path):
-        bin_path = os.path.join(weight_path, "pytorch_model.bin")
-        if not os.path.exists(bin_path):
-            if os.path.exists(weight_path) and weight_path.endswith('.bin'):
-                bin_path = weight_path
-            else:
-                raise FileNotFoundError(
-                    f"Could not find pytorch_model.bin at {weight_path}. "
-                    f"Please provide a valid local path or HuggingFace repo ID."
-                )
-        print(f"Loading weights from local path: {bin_path}")
+        # Try multiple checkpoint formats in priority order
+        candidates = [
+            (os.path.join(weight_path, "pytorch_model.bin"), "bin"),
+            (os.path.join(weight_path, "model.safetensors"), "safetensors"),
+        ]
+        # Also accept direct file paths
+        if os.path.isfile(weight_path):
+            ext = "safetensors" if weight_path.endswith('.safetensors') else "bin"
+            candidates = [(weight_path, ext)]
+        
+        resolved_path, fmt = None, None
+        for path, f in candidates:
+            if os.path.exists(path):
+                resolved_path, fmt = path, f
+                break
+        
+        if resolved_path is None:
+            raise FileNotFoundError(
+                f"No checkpoint found at {weight_path}. "
+                f"Looked for pytorch_model.bin and model.safetensors."
+            )
+        print(f"Loading weights from local path: {resolved_path} (format: {fmt})")
     else:
         print(f"Downloading weights from HuggingFace: {weight_path}")
-        bin_path = download_model_weights(weight_path, "pytorch_model.bin")
+        resolved_path = download_model_weights(weight_path, "pytorch_model.bin")
+        fmt = "bin"
     
-    state_dict = torch.load(bin_path, map_location='cpu')
-    sketch_decoder.load_state_dict(state_dict)
+    if fmt == "safetensors":
+        from safetensors.torch import load_file
+        state_dict = load_file(resolved_path)
+    else:
+        state_dict = torch.load(resolved_path, map_location='cpu')
+    missing, unexpected = sketch_decoder.load_state_dict(state_dict, strict=False)
+    if missing:
+        print(f"  Missing keys: {len(missing)} (first 5: {missing[:5]})")
+    if unexpected:
+        print(f"  Unexpected keys: {len(unexpected)} (first 5: {unexpected[:5]})")
     print("OmniSVG weights loaded successfully!")
     
     sketch_decoder = sketch_decoder.eval()
@@ -341,8 +374,15 @@ def load_models(model_size: str, weight_path: str = None, model_path: str = None
     else:
         print("⚠ CUDA 不可用，使用 CPU 推理（较慢）。若本机有 GPU，请检查驱动/CUDA，以及 CUDA_VISIBLE_DEVICES 是否指向存在的卡。")
     
-    # Initialize SVG tokenizer with model_size
-    svg_tokenizer = SVGTokenizer(CONFIG_PATH, model_size=model_size)
+    # Initialize SVG tokenizer
+    if use_train_tokenizer:
+        from utils.config import TokenizationConfig
+        tok_cfg_path = tokenization_config_path or './configs/tokenization.yaml'
+        token_cfg = TokenizationConfig.from_yaml(tok_cfg_path, model_size)
+        svg_tokenizer = TrainAlignedSVGTokenizer(token_cfg)
+        print(f"Using TrainAlignedSVGTokenizer (config: {tok_cfg_path})")
+    else:
+        svg_tokenizer = SVGTokenizer(CONFIG_PATH, model_size=model_size)
     
     current_model_size = model_size
     
@@ -625,7 +665,7 @@ def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, r
                 ], dim=1)
 
                 generated_xy = svg_tokenizer.process_generated_tokens(fake_wrapper)
-                if len(generated_xy) == 0:
+                if len(generated_xy) == 0: #(2039, 2)
                     continue
 
                 svg_tensors, color_tensors = svg_tokenizer.raster_svg(generated_xy)
@@ -933,7 +973,11 @@ def main():
     print("="*60)
     
     # Load models
-    load_models(args.model_size, args.weight_path, args.model_path)
+    load_models(
+        args.model_size, args.weight_path, args.model_path,
+        use_train_tokenizer=args.use_train_tokenizer,
+        tokenization_config_path=args.tokenization_config,
+    )
     
     # Process based on task type
     if args.task == "text-to-svg":

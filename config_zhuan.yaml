@@ -5,6 +5,7 @@ default_model_size: "4B"
 # ==============================================================================
 # Model-specific configurations
 # ==============================================================================
+# [base_vocab] [mask] [eom] [命令tokens] [坐标tokens] [颜色tokens] [arc参数]
 models:
   "4B":
     tokens:
@@ -28,8 +29,8 @@ models:
 # Shared configurations (same for both models)
 # ==============================================================================
 tokens:
-  num_end_token: 5
-  causal_pad: 3
+  num_end_token: 5 # 未使用
+  causal_pad: 3 # 未使用
   svg_end: 1
 
 coordinates:
@@ -50,7 +51,7 @@ svg_commands:
   close: -1
 
 arc:
-  param_offset: 44500  
+  param_offset: 44500  # 相对于 base_offset（基础词表大小 151936）的偏移量
   param_range: 100
 
 model:
@@ -60,7 +61,7 @@ model:
   max_length: 2048
 
 text:
-  max_length: 200
+  max_length: 50
 
 image:
   target_size: 224
