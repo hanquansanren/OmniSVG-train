@@ -41,7 +41,7 @@ training:
   weight_decay: 0.1 # 0.015
   max_grad_norm: 1.0 # 0.8
   
-  epochs: 3
+  epochs: 2
   # Increased gradient accumulation: 4 -> 8
   # This maintains effective batch size while using less memory per step
   gradient_accumulation_steps: 4

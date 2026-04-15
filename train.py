@@ -1357,6 +1357,10 @@ def save_checkpoint(
             
             print(f"✓ Checkpoint saved to: {ckpt_path}")
             print(f"  Save time: {elapsed:.1f} seconds")
+            
+            # Auto-merge FSDP sharded checkpoint to a single file
+            _merge_fsdp_if_needed(ckpt_path)
+            
             print(f"{'='*60}\n")
     
     except Exception as e:
@@ -1375,6 +1379,49 @@ def save_checkpoint(
         # 确保所有进程都同步，即使发生异常
         # 这是关键！避免某些进程提前退出导致进程不匹配
         accelerator.wait_for_everyone()
+
+
+def _merge_fsdp_if_needed(ckpt_path: Path):
+    """Merge FSDP sharded checkpoint (.distcp) into a single model.safetensors file."""
+    import glob as _glob
+    fsdp_dirs = sorted(_glob.glob(str(ckpt_path / "pytorch_model_fsdp_*")))
+    if not fsdp_dirs:
+        return
+    
+    fsdp_dir = fsdp_dirs[0]
+    distcp_files = _glob.glob(os.path.join(fsdp_dir, "*.distcp"))
+    if not distcp_files:
+        return
+    
+    output_path = str(ckpt_path / "model.safetensors")
+    if os.path.exists(output_path):
+        return
+    
+    print(f"  Merging {len(distcp_files)} FSDP shards -> model.safetensors ...")
+    try:
+        import time
+        t0 = time.time()
+        from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
+        
+        tmp_path = output_path + ".tmp"
+        dcp_to_torch_save(fsdp_dir, tmp_path)
+        
+        state_dict = torch.load(tmp_path, map_location="cpu", weights_only=False)
+        
+        if 'model' in state_dict and isinstance(state_dict['model'], dict):
+            state_dict = state_dict['model']
+        
+        from safetensors.torch import save_file
+        save_file(state_dict, output_path)
+        
+        os.remove(tmp_path)
+        
+        size_mb = os.path.getsize(output_path) / 1024 / 1024
+        print(f"  ✓ Merged model saved: {output_path} ({size_mb:.0f} MB, {time.time()-t0:.1f}s)")
+    except Exception as e:
+        print(f"  ⚠ Failed to merge FSDP shards: {e}")
+        if os.path.exists(output_path + ".tmp"):
+            os.remove(output_path + ".tmp")
 
 
 # ============================================================================
