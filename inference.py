@@ -1,6 +1,6 @@
 import torch
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from PIL import Image
 import cairosvg
 import io
@@ -196,7 +196,7 @@ def parse_args():
                         help=f'Model size to use (default: {DEFAULT_MODEL_SIZE})')
     parser.add_argument('--model-path', type=str, default="/data/phd23_weiguang_zhang/works/svg/qwen25vl3b",
                         help='Local path or HuggingFace repo ID for Qwen model (overrides config)')
-    parser.add_argument('--weight-path', type=str, default="output/omnisvg_4b_20260409_045251/step_2000",
+    parser.add_argument('--weight-path', type=str, default="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output/omnisvg_4b_20260410_215008/step_7500/pytorch_model_fsdp_0",
     # "output/omnisvg_4b_20260210_022748/step_33000/pytorch_model.bin",
     # "output/omnisvg_4b_20260210_022748/step_3000",
     # "output/omnisvg_4b_20260406_081050/step_5000/model.safetensors",

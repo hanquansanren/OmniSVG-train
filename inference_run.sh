@@ -20,7 +20,8 @@ OUTPUT="./output_image_zhuan"
 
 SAVE_PNG="true"
 SAVE_ALL_CANDIDATES="true"
-
+BASE_MODEL="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/qwen25vl3b"
+WEIGHT_MODEL="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output/omnisvg_4b_20260410_215008/step_7500"
 # 追加传给 inference.py 的参数，例如: EXTRA_ARGS=(--verbose --model-size 4B)
 EXTRA_ARGS=()
 
@@ -28,10 +29,12 @@ EXTRA_ARGS=()
 # 构建命令
 # ==============================================================================
 
-CMD=( "$PYTHON" inference.py
+CMD=( "$PYTHON" ./inference.py
   --task "$TASK"
   --input "$INPUT"
   --output "$OUTPUT"
+  --model-path "$BASE_MODEL"
+  --weight-path "$WEIGHT_MODEL"
 )
 
 if [ "$SAVE_PNG" = "true" ]; then

@@ -39,12 +39,12 @@ NUM_GPUS=4
 BATCH_SIZE=1
 
 # Maximum SVG sequence length
-# MAX_SEQ_LENGTH=2048
+MAX_SEQ_LENGTH=3072
 
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
-DATA_DIR="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_zhuan"
+DATA_DIR="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_zhuan4"
 
 # Output directory for checkpoints and logs
 OUTPUT_DIR="./output"
@@ -57,7 +57,8 @@ PROJECT_NAME="omnisvg_4b_$(date +%Y%m%d_%H%M%S)"
 #   - "": Start from scratch
 #   - "auto": Download and use official OmniSVG checkpoint
 #   - "/path/to/checkpoint": Resume from specific checkpoint
-RESUME_CHECKPOINT=""
+RESUME_CHECKPOINT="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
+# "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
 # "output/omnisvg_4b_20260214_205636/step_3000"
 # "output/omnisvg_4b_20260209_021556/step_12000"
 # "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"

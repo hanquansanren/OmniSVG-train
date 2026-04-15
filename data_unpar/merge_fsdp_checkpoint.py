@@ -60,7 +60,7 @@ def merge(checkpoint_dir: str, output_format: str = "safetensors"):
     if output_format == "safetensors":
         output_path = os.path.join(checkpoint_dir, "model.safetensors")
     else:
-        output_path = os.path.join(checkpoint_dir, "model.bin")
+        output_path = os.path.join(checkpoint_dir, "pytorch_model.bin")
 
     if os.path.exists(output_path):
         print(f"\nOutput file already exists: {output_path}")
