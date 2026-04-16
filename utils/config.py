@@ -5,9 +5,46 @@ Supports both 4B and 8B model variants.
 
 import os
 import yaml
-from typing import Dict, Any, Optional, Union, Literal
+from typing import Dict, Any, Optional, Union, Literal, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+def resolve_base_model_path(
+    value: Union[str, Sequence[str], None],
+    default: str,
+) -> str:
+    """Turn YAML ``base_model`` into a single path or Hub id.
+
+    - A string is expanded (``~``, env vars) and returned.
+    - A non-empty list/tuple tries each entry in order: use the first path that
+      exists on disk; if an entry is not an absolute/relative filesystem path
+      (e.g. HuggingFace model id), return it immediately.
+    - If no local candidate exists, returns the first list entry expanded (so
+      loaders can surface a clear error).
+    """
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return os.path.expandvars(os.path.expanduser(value))
+
+    if isinstance(value, (list, tuple)):
+        for raw in value:
+            if raw is None:
+                continue
+            p = os.path.expandvars(os.path.expanduser(str(raw).strip()))
+            if not p:
+                continue
+            if os.path.exists(p):
+                return p
+            if os.path.isabs(p) or p.startswith(("./", "../")):
+                continue
+            return p
+        if value:
+            return os.path.expandvars(os.path.expanduser(str(value[0]).strip()))
+        return default
+
+    return str(value)
 
 
 def load_yaml(filepath: str) -> Dict[str, Any]:
@@ -144,11 +181,14 @@ class TokenizationConfig:
         # Get defaults for this model size
         defaults = MODEL_DEFAULTS.get(model_size, MODEL_DEFAULTS["4B"])
         
+        raw_base = model_config.get('base_model', defaults['base_model'])
+        base_model = resolve_base_model_path(raw_base, defaults['base_model'])
+
         return cls(
             model_size=model_size,
             base_vocab_size=model_config.get('base_vocab_size', defaults['base_vocab_size']),
             extended_vocab_size=model_config.get('extended_vocab_size', defaults['extended_vocab_size']),
-            base_model=model_config.get('base_model', defaults['base_model']),
+            base_model=base_model,
             checkpoint=model_config.get('checkpoint', defaults['checkpoint']),
             pad_token_id=special.get('pad_token_id', defaults['pad_token_id']),
             bos_token_id=special.get('bos_token_id', defaults['bos_token_id']),

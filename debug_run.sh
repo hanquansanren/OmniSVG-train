@@ -15,7 +15,7 @@ MODEL_SIZE="4B"
 # Enable Flash Attention 2 for faster training (recommended)
 # Set to "true" or "false"
 USE_FLASH_ATTN="true"  
-
+DISABLE_TORCH_COMPILE="true"
 # Disable P2P and IB for RTX 4000 series compatibility
 # Set to "true" for RTX 4000 series, "false" for A100/H100
 DISABLE_NCCL_P2P_IB="true" 
