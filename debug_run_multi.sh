@@ -39,12 +39,12 @@ NUM_GPUS=4
 BATCH_SIZE=1
 
 # Maximum SVG sequence length
-MAX_SEQ_LENGTH=3072
+MAX_SEQ_LENGTH=2048
 
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
-DATA_DIR="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_zhuan4"
+DATA_DIR="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_zhuan42"
 
 # Output directory for checkpoints and logs
 OUTPUT_DIR="./output"

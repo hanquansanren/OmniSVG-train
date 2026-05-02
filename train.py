@@ -1604,6 +1604,7 @@ def main():
     print(f"Flash Attention:   {config.training.use_flash_attn}")
     print(f"Gradient Checkpoint:{config.training.use_gradient_checkpointing}")
     print(f"Data Directory:    {config.training.data_dir}")
+    print(f"Target Image Size: {config.training.target_image_size}")
     print(f"Max Seq Length:    {config.training.max_seq_length}")
     print(f"Batch Size:        {args.batch_size}")
     print(f"Grad Accum Steps:  {config.training.gradient_accumulation_steps}")

@@ -20,7 +20,7 @@ data:
   data_dir: "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_zhuan4"
   
   # A100可以用更大的图像尺寸
-  target_image_size: 224
+  target_image_size: 448
   
   # 序列长度保持合理值
   max_seq_length: 3072
