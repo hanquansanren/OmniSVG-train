@@ -140,5 +140,6 @@ examples/*
 *.out_perf
 *.pyc
 *.md
+*.slurm
 
 

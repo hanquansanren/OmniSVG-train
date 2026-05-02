@@ -13,6 +13,7 @@ models:
     base_model:
       - "/data/phd23_weiguang_zhang/works/svg/qwen25vl3b"
       - "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/qwen25vl3b"
+      - "/gpfs/work/int/weiguangzhang21/weights/qwen25vl3b"
     # checkpoint: ""
     # "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
     

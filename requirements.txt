@@ -17,3 +17,4 @@ deepspeed==0.16.3
 datasets==3.5.0
 jinja2==3.1.0
 tensorboard
+wandb==0.23.0
