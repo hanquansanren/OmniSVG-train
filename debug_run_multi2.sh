@@ -36,7 +36,7 @@ DISABLE_NCCL_P2P_IB="false"
 NUM_GPUS=4
 
 # Batch size per GPU
-BATCH_SIZE=1
+BATCH_SIZE=2
 
 # Maximum SVG sequence length
 MAX_SEQ_LENGTH=8192
