@@ -36,7 +36,7 @@ DISABLE_NCCL_P2P_IB="false"
 NUM_GPUS=4
 
 # Batch size per GPU
-BATCH_SIZE=2
+BATCH_SIZE=1
 
 # Maximum SVG sequence length
 MAX_SEQ_LENGTH=8192
@@ -165,6 +165,7 @@ fi
 ACCELERATE_CMD="accelerate launch"
 ACCELERATE_CMD+=" --num_processes ${NUM_GPUS}"
 ACCELERATE_CMD+=" --mixed_precision ${MIXED_PRECISION}"
+ACCELERATE_CMD+=" --main_process_port 0"
 
 if [ -n "$ACCELERATE_CONFIG" ]; then
     ACCELERATE_CMD+=" --config_file ${ACCELERATE_CONFIG}"

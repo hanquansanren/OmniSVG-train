@@ -38,7 +38,7 @@ training:
   weight_decay: 0.1
   max_grad_norm: 1.0
   
-  epochs: 3
+  epochs: 2
   
   # ⭐ 关键优化：减少gradient accumulation
   # batch_size=2 * 4 GPU * grad_accum=2 = 有效batch 16
@@ -63,7 +63,7 @@ training:
 logging:
   log_every: 20          # 稍微减少日志频率
   save_every: 2500       # ⭐ 减少checkpoint保存频率（之前2000）
-  val_every: 1000        # ⭐ 大幅减少验证频率（之前50！）
+  val_every: 2000        # ⭐ 大幅减少验证频率（之前50！）
 
 # ==============================================================================
 # DataLoader Configuration - A100优化

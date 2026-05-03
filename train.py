@@ -551,7 +551,6 @@ def process_mixed_batch(
                 inputs['attention_mask'][idx],
                 pix_seq_lists[i],
                 max_len,
-                pad_token_id,
             )
             batch_input_ids.append((i, input_ids))
             batch_attention_mask.append((i, attention_mask))
@@ -590,20 +589,30 @@ def process_mixed_batch(
                 inputs['attention_mask'][idx].tolist(),
                 pix_seq_lists[i],
                 max_len,
-                pad_token_id,
             )
             batch_input_ids.append((i, input_ids))
             batch_attention_mask.append((i, attention_mask))
             batch_labels.append((i, labels))
     
-    # Sort by original index and stack
+    # Sort by original index and pad only to the longest sequence in this batch.
     batch_input_ids.sort(key=lambda x: x[0])
     batch_attention_mask.sort(key=lambda x: x[0])
     batch_labels.sort(key=lambda x: x[0])
+
+    batch_max_len = max(x[1].size(0) for x in batch_input_ids)
     
-    input_ids = torch.stack([x[1] for x in batch_input_ids])
-    attention_mask = torch.stack([x[1] for x in batch_attention_mask])
-    labels = torch.stack([x[1] for x in batch_labels])
+    input_ids = torch.stack([
+        _left_pad_tensor(x[1], batch_max_len, pad_token_id)
+        for x in batch_input_ids
+    ])
+    attention_mask = torch.stack([
+        _left_pad_tensor(x[1], batch_max_len, 0)
+        for x in batch_attention_mask
+    ])
+    labels = torch.stack([
+        _left_pad_tensor(x[1], batch_max_len, -100)
+        for x in batch_labels
+    ])
     
     return input_ids, attention_mask, pixel_values, image_grid_thw, labels, task_masks
 
@@ -613,31 +622,38 @@ def _process_sample(
     base_attention_mask: List[int],
     pix_seq: List[int],
     max_len: int,
-    pad_token_id: int,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Process a single sample."""
+    """Build one sample and apply only the global length cap."""
     current_input_ids = base_input_ids + pix_seq
     current_attention_mask = base_attention_mask + [1] * len(pix_seq)
     
     instruction_len = len(base_input_ids)
     current_labels = [-100] * instruction_len + pix_seq
     
-    pad_len = max_len - len(current_input_ids)
-    
-    if pad_len > 0:
-        input_ids = [pad_token_id] * pad_len + current_input_ids
-        attention_mask = [0] * pad_len + current_attention_mask
-        labels = [-100] * pad_len + current_labels
-    else:
-        input_ids = current_input_ids[:max_len]
-        attention_mask = current_attention_mask[:max_len]
-        labels = current_labels[:max_len] if len(current_labels) <= max_len else current_labels[:max_len]
+    input_ids = current_input_ids[:max_len]
+    attention_mask = current_attention_mask[:max_len]
+    labels = current_labels[:max_len]
     
     return (
         torch.tensor(input_ids, dtype=torch.long),
         torch.tensor(attention_mask, dtype=torch.long),
         torch.tensor(labels, dtype=torch.long),
     )
+
+
+def _left_pad_tensor(tensor: torch.Tensor, target_len: int, pad_value: int) -> torch.Tensor:
+    """Left-pad a 1D tensor to target_len."""
+    pad_len = target_len - tensor.size(0)
+    if pad_len <= 0:
+        return tensor
+    
+    padding = torch.full(
+        (pad_len,),
+        pad_value,
+        dtype=tensor.dtype,
+        device=tensor.device,
+    )
+    return torch.cat((padding, tensor), dim=0)
 
 
 # ============================================================================

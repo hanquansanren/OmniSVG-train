@@ -39,7 +39,7 @@ fsdp_config:
   # ⭐ FSDP原生的Activation Checkpointing
   # A100 40GB显存充足，可以考虑关闭以提升速度
   # 如果显存够用，关闭可以提升10-15%速度
-  fsdp_activation_checkpointing: true
+  fsdp_activation_checkpointing: false
   
   # ⭐ 限制FSDP wrapper的数量，减少通信开销
   # 只wrap大于10M参数的模块
