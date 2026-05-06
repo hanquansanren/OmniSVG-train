@@ -1,6 +1,6 @@
 import torch
 import os
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 from PIL import Image
 import cairosvg
 import io

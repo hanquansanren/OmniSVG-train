@@ -15,9 +15,10 @@ set -euo pipefail
 PYTHON="${PYTHON:-python}"
 
 TASK="image-to-svg"
-INPUT="./backup/examples_zhuan3"
-OUTPUT="./output_image_zhuan224"
-WEIGHT_MODEL="output/omnisvg_4b_20260409_174406/step_30000"
+INPUT="./backup/example_li/png"
+# "./backup/examples_zhuan3"
+OUTPUT="./output_image_li2"
+WEIGHT_MODEL="output/omnisvg_4b_20260503_020350/step_10000"
 # "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output/omnisvg_4b_20260410_215008/step_7500"
 
 
@@ -30,6 +31,7 @@ SAVE_ALL_CANDIDATES="true"
 BASE_MODEL_CANDIDATES=(
   "/data/phd23_weiguang_zhang/works/svg/qwen25vl3b"
   "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/qwen25vl3b"
+  "/gpfs/work/int/weiguangzhang21/weights/qwen25vl3b"
 )
 if [ -z "${BASE_MODEL:-}" ]; then
   BASE_MODEL=""

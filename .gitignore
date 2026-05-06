@@ -136,11 +136,13 @@ output_images/*
 output_image_zhuan*/*
 backup/*
 examples/*
+scripts/*
 *.out
 *.err
 *.out_perf
 *.pyc
 *.md
 *.slurm
+output_image*
 
 

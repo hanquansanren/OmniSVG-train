@@ -47,7 +47,7 @@ training:
   
   scheduler:
     type: "cosine"
-    warmup_steps: 200
+    warmup_steps: 400
     num_cycles: 0.5
   
   task_balance:
