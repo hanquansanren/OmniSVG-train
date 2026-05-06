@@ -165,7 +165,8 @@ fi
 ACCELERATE_CMD="accelerate launch"
 ACCELERATE_CMD+=" --num_processes ${NUM_GPUS}"
 ACCELERATE_CMD+=" --mixed_precision ${MIXED_PRECISION}"
-ACCELERATE_CMD+=" --main_process_port 0"
+MAIN_PROCESS_PORT="${MAIN_PROCESS_PORT:-$((10000 + ${SLURM_JOB_ID:-0} % 50000))}"
+ACCELERATE_CMD+=" --main_process_port ${MAIN_PROCESS_PORT}"
 
 if [ -n "$ACCELERATE_CONFIG" ]; then
     ACCELERATE_CMD+=" --config_file ${ACCELERATE_CONFIG}"
@@ -248,15 +249,7 @@ else
     # export NCCL_IB_DISABLE=0
 fi
 
-# ⭐⭐⭐ 重要：清理GPU状态，防止CUDA错误 ⭐⭐⭐
-echo "🧹 Cleaning GPU state..."
-# 杀死可能残留的Python训练进程
-pkill -9 -f "train.py" || true
-pkill -9 -f "accelerate" || true
-# 等待进程完全退出
-sleep 2
-echo "✓ GPU cleanup completed"
-echo ""
+# 不要在 Slurm 任务启动时 pkill train.py/accelerate；这会杀掉同一节点上的其它训练任务。
 
 # # ⭐ 禁用FSDP和分布式训练的详细日志输出
 # export TORCH_DISTRIBUTED_LOG_LEVEL=WARNING            # 只显示警告和错误
@@ -306,11 +299,24 @@ echo ""
 # export NCCL_IB_TIMEOUT=50           # InfiniBand超时（如果使用IB）
 # export NCCL_SOCKET_NTHREADS=8       # Socket线程数
 
+echo "--- GPU Diagnostics ---"
+echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"
+echo "SLURM_JOB_GPUS:      ${SLURM_JOB_GPUS:-not set}"
+echo "SLURM_NODELIST:      ${SLURM_NODELIST:-not set}"
+if command -v nvidia-smi >/dev/null 2>&1; then
+    echo ""
+    echo "nvidia-smi (memory):"
+    nvidia-smi --query-gpu=index,name,memory.used,memory.free,memory.total --format=csv
+    echo ""
+    echo "nvidia-smi (processes):"
+    nvidia-smi --query-compute-apps=pid,used_gpu_memory,name --format=csv 2>/dev/null || echo "(no compute processes)"
+fi
+echo "--- End GPU Diagnostics ---"
+echo ""
+
 echo "Starting training..."
 echo "Command: ${ACCELERATE_CMD} train.py ${CMD_ARGS}"
 echo ""
-
-# python diagnose_cuda.py
 
 ${ACCELERATE_CMD} train.py ${CMD_ARGS}
 

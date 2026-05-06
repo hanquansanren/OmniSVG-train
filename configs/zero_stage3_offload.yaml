@@ -1,0 +1,31 @@
+compute_environment: LOCAL_MACHINE
+distributed_type: DEEPSPEED
+
+deepspeed_config:
+  zero_stage: 3
+  zero3_init_flag: false
+  zero3_save_16bit_model: false
+  offload_param_device: cpu
+  offload_optimizer_device: cpu
+  gradient_accumulation_steps: 4
+  gradient_clipping: 1.0
+  deepspeed_multinode_launcher: standard
+
+mixed_precision: bf16
+downcast_bf16: 'no'
+
+num_processes: 4
+gpu_ids: all
+use_cpu: false
+
+num_machines: 1
+machine_rank: 0
+main_process_ip: null
+main_process_port: null
+main_training_function: main
+rdzv_backend: static
+same_network: true
+
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false

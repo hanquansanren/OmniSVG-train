@@ -43,7 +43,7 @@ training:
   # ⭐ 关键优化：减少gradient accumulation
   # batch_size=2 * 4 GPU * grad_accum=2 = 有效batch 16
   # (之前：1 * 4 * 4 = 16，现在一样但速度更快)
-  gradient_accumulation_steps: 4
+  gradient_accumulation_steps: 8
   
   scheduler:
     type: "cosine"

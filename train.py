@@ -49,6 +49,7 @@ if os.environ.get("LOCAL_RANK", "0") == "0":
 
 import argparse
 import json
+import shutil
 import torch
 import torch.nn as nn
 import numpy as np
@@ -1376,6 +1377,9 @@ def save_checkpoint(
             
             # Auto-merge FSDP sharded checkpoint to a single file
             _merge_fsdp_if_needed(ckpt_path)
+            _remove_fsdp_shards_after_merge(ckpt_path)
+            if is_best:
+                _prune_best_checkpoint_for_inference(ckpt_path)
             
             print(f"{'='*60}\n")
     
@@ -1396,47 +1400,54 @@ def save_checkpoint(
         # 这是关键！避免某些进程提前退出导致进程不匹配
         accelerator.wait_for_everyone()
 
-def _merge_fsdp_if_needed(ckpt_path: Path):
-    """Merge FSDP sharded checkpoint (.distcp) into a single model.safetensors file."""
-    import glob as _glob
-    fsdp_dirs = sorted(_glob.glob(str(ckpt_path / "pytorch_model_fsdp_*")))
-    if not fsdp_dirs:
+def _prune_best_checkpoint_for_inference(ckpt_path: Path):
+    """Keep only inference artifacts for best_model to avoid duplicating huge training state."""
+    model_file = ckpt_path / "model.safetensors"
+    if not model_file.exists():
+        print("  ⚠ Skip pruning best_model because model.safetensors was not created.")
         return
-    
-    fsdp_dir = fsdp_dirs[0]
-    distcp_files = _glob.glob(os.path.join(fsdp_dir, "*.distcp"))
-    if not distcp_files:
+
+    removed = []
+    for pattern in (
+        "optimizer_*",
+        "scheduler.bin",
+        "random_states_*.pkl",
+    ):
+        for path in ckpt_path.glob(pattern):
+            try:
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                removed.append(path.name)
+            except Exception as e:
+                print(f"  ⚠ Failed to remove {path.name}: {e}")
+
+    if removed:
+        print(f"  ✓ Pruned best_model training state: {', '.join(removed)}")
+        print("  ✓ best_model now keeps model.safetensors + training_info.json for inference.")
+
+
+def _remove_fsdp_shards_after_merge(ckpt_path: Path):
+    """Remove FSDP shard directories once model.safetensors exists."""
+    model_file = ckpt_path / "model.safetensors"
+    if not model_file.exists():
+        print("  ⚠ Keep FSDP shards because model.safetensors was not created.")
         return
-    
-    output_path = str(ckpt_path / "model.safetensors")
-    if os.path.exists(output_path):
-        return
-    
-    print(f"  Merging {len(distcp_files)} FSDP shards -> model.safetensors ...")
-    try:
-        import time
-        t0 = time.time()
-        from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
-        
-        tmp_path = output_path + ".tmp"
-        dcp_to_torch_save(fsdp_dir, tmp_path)
-        
-        state_dict = torch.load(tmp_path, map_location="cpu", weights_only=False)
-        
-        if 'model' in state_dict and isinstance(state_dict['model'], dict):
-            state_dict = state_dict['model']
-        
-        from safetensors.torch import save_file
-        save_file(state_dict, output_path)
-        
-        os.remove(tmp_path)
-        
-        size_mb = os.path.getsize(output_path) / 1024 / 1024
-        print(f"  ✓ Merged model saved: {output_path} ({size_mb:.0f} MB, {time.time()-t0:.1f}s)")
-    except Exception as e:
-        print(f"  ⚠ Failed to merge FSDP shards: {e}")
-        if os.path.exists(output_path + ".tmp"):
-            os.remove(output_path + ".tmp")
+
+    removed = []
+    for path in ckpt_path.glob("pytorch_model_fsdp_*"):
+        try:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            removed.append(path.name)
+        except Exception as e:
+            print(f"  ⚠ Failed to remove {path.name}: {e}")
+
+    if removed:
+        print(f"  ✓ Removed FSDP shard directories: {', '.join(removed)}")
 
 
 

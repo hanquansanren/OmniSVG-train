@@ -5,11 +5,10 @@ compute_environment: LOCAL_MACHINE
 distributed_type: FSDP
 
 fsdp_config:
-  # 基于Transformer层的包裹策略
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  
-  # Qwen2.5-VL的正确层类名（已验证）
-  fsdp_transformer_layer_cls_to_wrap: Qwen2_5_VLDecoderLayer
+  # 使用 SIZE_BASED_WRAP，让 vision / embedding / lm_head 等大模块也被单独分片。
+  # TRANSFORMER_BASED_WRAP 只包 decoder layer，root module 仍可能过大，FSDP 初始化时会 OOM。
+  fsdp_auto_wrap_policy: SIZE_BASED_WRAP
+  fsdp_min_num_params: 100000
   
   fsdp_sharding_strategy: FULL_SHARD
   fsdp_backward_prefetch: BACKWARD_PRE
@@ -21,10 +20,15 @@ fsdp_config:
   # 缺点：加载时需要用FSDP，不能直接用普通方式加载
   fsdp_state_dict_type: SHARDED_STATE_DICT
   
-  fsdp_sync_module_states: true
-  fsdp_use_orig_params: true
-  fsdp_cpu_ram_efficient_loading: true
-  fsdp_offload_params: false
+  # 每个 rank 都会从同一个 checkpoint 加载权重，不需要 rank0 再把完整参数广播一次。
+  # 关闭它可以降低 FSDP 初始化时 rank0 的显存峰值。
+  fsdp_sync_module_states: false
+  # 降低 FSDP 初始化/flatten 时的原始参数保留开销。
+  fsdp_use_orig_params: false
+  # Accelerate 要求 cpu_ram_efficient_loading=true 时 sync_module_states 也必须为 true。
+  # train2 每个 rank 独立加载同一份权重，所以这里关闭 CPU RAM efficient loading。
+  fsdp_cpu_ram_efficient_loading: false
+  fsdp_offload_params: true
   
   # FSDP原生的Activation Checkpointing
   fsdp_activation_checkpointing: true

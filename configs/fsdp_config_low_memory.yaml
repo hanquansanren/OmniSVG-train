@@ -5,11 +5,10 @@ compute_environment: LOCAL_MACHINE
 distributed_type: FSDP
 
 fsdp_config:
-  # 基于Transformer层的包裹策略
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  
-  # Qwen2.5-VL的层类名
-  fsdp_transformer_layer_cls_to_wrap: Qwen2_5_VLDecoderLayer
+  # 使用 SIZE_BASED_WRAP，让 embedding / vision / lm_head 等大模块也能被单独分片。
+  # TRANSFORMER_BASED_WRAP 会把非 Transformer 大模块留在 root 里，FSDP 初始化时容易 OOM。
+  fsdp_auto_wrap_policy: SIZE_BASED_WRAP
+  fsdp_min_num_params: 1000000
   
   # 完全分片策略（最省显存）
   fsdp_sharding_strategy: FULL_SHARD
@@ -19,7 +18,7 @@ fsdp_config:
   fsdp_forward_prefetch: false
   
   # 状态字典类型
-  fsdp_state_dict_type: FULL_STATE_DICT
+  fsdp_state_dict_type: SHARDED_STATE_DICT
   fsdp_sync_module_states: true
   fsdp_use_orig_params: true
   
