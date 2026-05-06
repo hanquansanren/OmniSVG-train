@@ -94,7 +94,7 @@ CONFIG_DIR="./configs"
 #   - "train_config_zhuan.yaml" (原始配置)
 #   - "train_config_zhuan_fast.yaml" (⭐ A100性能优化版本)
 #   - "train_config_low_memory.yaml" (optimized for low VRAM)
-TRAIN_CONFIG_FILE="train_config_zhuan_a100_fat.yaml"
+TRAIN_CONFIG_FILE="train_config_zhuan_a100_fat3.yaml"
 
 # Accelerate config file (for DeepSpeed, FSDP, etc.)
 # Leave empty for default settings 多卡训练时需要配置
