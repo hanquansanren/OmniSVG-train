@@ -1,0 +1,51 @@
+# OmniSVG Stage 2 Configuration - SVG code-complement training
+
+model:
+  size: "4B"
+  use_flash_attn: true
+  torch_dtype: "bfloat16"
+  use_gradient_checkpointing: true
+
+data:
+  target_image_size: 448
+  # The prompt contains partial SVG text, so keep more room than text2svg.
+  text_max_length: 2048 # 输入prompt总长度（text+image）
+
+  text_source_probabilities:
+    detail_description: 0.60
+    brief_description: 0.40
+
+training:
+  learning_rate: 1.0e-4
+  weight_decay: 0.1
+  max_grad_norm: 1.0
+
+  epochs: 40
+  gradient_accumulation_steps: 4
+
+  scheduler:
+    type: "cosine"
+    warmup_steps: 500
+    num_cycles: 0.5
+
+  task_balance:
+    initial_text_only_ratio: 0.0
+    code_complement_ratio: 1.0
+
+  loss_weights:
+    text_task: 0.0
+    image_task: 0.0
+    code_complement_task: 1.0
+
+logging:
+  log_every: 2
+  save_every: 20
+  val_every: 10
+
+dataloader:
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+
+seed: 2023

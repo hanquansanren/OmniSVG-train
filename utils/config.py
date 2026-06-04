@@ -254,8 +254,11 @@ class TrainConfig:
     
     # Task balance
     text_only_ratio: float = 0.50
+    code_complement_ratio: float = 0.0
+    enable_code_complement: bool = False
     text_loss_weight: float = 1.5
     image_loss_weight: float = 1.0
+    code_complement_loss_weight: float = 0.0
     
     # Logging
     log_every: int = 10
@@ -272,6 +275,8 @@ class TrainConfig:
         """Set model path based on model size if not specified."""
         if not self.model_path:
             self.model_path = MODEL_DEFAULTS[self.model_size]["base_model"]
+        if self.code_complement_ratio > 0:
+            self.enable_code_complement = True
     
     @classmethod
     def from_yaml(cls, filepath: str, model_size: Optional[ModelSize] = None) -> "TrainConfig":
@@ -287,6 +292,16 @@ class TrainConfig:
         logging = config.get('logging', {})
         dataloader = config.get('dataloader', {})
         text_probs = data.get('text_source_probabilities', {})
+
+        def as_float(value: Any, default: float) -> float:
+            if value is None:
+                return default
+            return float(value)
+
+        def as_int(value: Any, default: int) -> int:
+            if value is None:
+                return default
+            return int(value)
         
         # Use provided model_size or fall back to config
         effective_model_size = model_size or model.get('size', '4B')
@@ -299,24 +314,27 @@ class TrainConfig:
             use_flash_attn=model.get('use_flash_attn', True),
             use_gradient_checkpointing=model.get('use_gradient_checkpointing', False),
             data_dir=data.get('data_dir', './data'),
-            target_image_size=data.get('target_image_size', 448),
-            text_max_length=data.get('text_max_length', 800),
-            max_seq_length=data.get('max_seq_length', 2048),
-            detail_prob=text_probs.get('detail_description', 0.60),
-            learning_rate=training.get('learning_rate', 1e-5),
-            weight_decay=training.get('weight_decay', 0.015),
-            max_grad_norm=training.get('max_grad_norm', 0.8),
-            warmup_steps=scheduler.get('warmup_steps', 50000),
-            epochs=training.get('epochs', 150),
-            gradient_accumulation_steps=training.get('gradient_accumulation_steps', 4),
-            text_only_ratio=task.get('initial_text_only_ratio', 0.50),
-            text_loss_weight=loss.get('text_task', 1.5),
-            image_loss_weight=loss.get('image_task', 1.0),
-            log_every=logging.get('log_every', 10),
-            save_every=logging.get('save_every', 3000),
-            val_every=logging.get('val_every', 5000),
-            num_workers=dataloader.get('num_workers', 8),
-            seed=config.get('seed', 2023),
+            target_image_size=as_int(data.get('target_image_size'), 448),
+            text_max_length=as_int(data.get('text_max_length'), 800),
+            max_seq_length=as_int(data.get('max_seq_length'), 2048),
+            detail_prob=as_float(text_probs.get('detail_description'), 0.60),
+            learning_rate=as_float(training.get('learning_rate'), 1e-5),
+            weight_decay=as_float(training.get('weight_decay'), 0.015),
+            max_grad_norm=as_float(training.get('max_grad_norm'), 0.8),
+            warmup_steps=as_int(scheduler.get('warmup_steps'), 50000),
+            epochs=as_int(training.get('epochs'), 150),
+            gradient_accumulation_steps=as_int(training.get('gradient_accumulation_steps'), 4),
+            text_only_ratio=as_float(task.get('initial_text_only_ratio'), 0.50),
+            code_complement_ratio=as_float(task.get('code_complement_ratio'), 0.0),
+            enable_code_complement=as_float(task.get('code_complement_ratio'), 0.0) > 0,
+            text_loss_weight=as_float(loss.get('text_task'), 1.5),
+            image_loss_weight=as_float(loss.get('image_task'), 1.0),
+            code_complement_loss_weight=as_float(loss.get('code_complement_task'), 0.0),
+            log_every=as_int(logging.get('log_every'), 10),
+            save_every=as_int(logging.get('save_every'), 3000),
+            val_every=as_int(logging.get('val_every'), 5000),
+            num_workers=as_int(dataloader.get('num_workers'), 8),
+            seed=as_int(config.get('seed'), 2023),
         )
 
 

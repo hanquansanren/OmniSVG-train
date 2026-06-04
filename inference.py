@@ -1,6 +1,6 @@
 import torch
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 from PIL import Image
 import cairosvg
 import io
@@ -9,6 +9,7 @@ import argparse
 import gc
 import yaml
 import glob
+import re
 import numpy as np
 import time
 from pathlib import Path
@@ -19,9 +20,13 @@ from decoder import SketchDecoder
 from transformers import AutoTokenizer, AutoProcessor
 from qwen_vl_utils import process_vision_info
 from tokenizer import SVGTokenizer, TrainAlignedSVGTokenizer
+from deepsvg.svglib.svg import SVG as DeepSVG
+from utils.dataset import SVGTokenizer as TrainingSVGEncoder
 
 # Load config
-CONFIG_PATH = './config_zhuan.yaml'
+CONFIG_PATH = "./configs/config_code_complement.yaml"
+# "./config_code_complement.yaml"
+# "./config_zhuan.yaml"
 with open(CONFIG_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
@@ -34,6 +39,7 @@ tokenizer = None
 processor = None
 sketch_decoder = None
 svg_tokenizer = None
+svg_condition_encoder = None
 current_model_size = None
 
 # Constants from config
@@ -114,6 +120,12 @@ TASK_CONFIGS = {
         "default_top_p": 0.90,
         "default_top_k": 50,
         "default_repetition_penalty": 1.05,
+    }),
+    "code-complement": task_config.get('code_complement', {
+        "default_temperature": 0.3,
+        "default_top_p": 0.90,
+        "default_top_k": 50,
+        "default_repetition_penalty": 1.05,
     })
 }
 
@@ -181,8 +193,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description='OmniSVG Inference Script')
     
     # Task selection
-    parser.add_argument('--task', type=str, required=True, choices=['text-to-svg', 'image-to-svg'],
-                        help='Task type: text-to-svg or image-to-svg')
+    parser.add_argument('--task', type=str, required=True, choices=['text-to-svg', 'image-to-svg', 'code-complement'],
+                        help='Task type: text-to-svg, image-to-svg, or code-complement')
     
     # Input/Output
     parser.add_argument('--input', type=str, required=True,
@@ -196,7 +208,10 @@ def parse_args():
                         help=f'Model size to use (default: {DEFAULT_MODEL_SIZE})')
     parser.add_argument('--model-path', type=str, default="/data/phd23_weiguang_zhang/works/svg/qwen25vl3b",
                         help='Local path or HuggingFace repo ID for Qwen model (overrides config)')
-    parser.add_argument('--weight-path', type=str, default="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output/omnisvg_4b_20260410_215008/step_7500/pytorch_model_fsdp_0",
+    parser.add_argument('--weight-path', type=str, default="output_stage2/omnisvg_4b_20260603_081248/step_20000/model.safetensors",
+    # "output_stage2/omnisvg_4b_20260604_100343/step_180/model.safetensors",
+    # "output_stage2/omnisvg_4b_20260603_081248/step_12000/model.safetensors",
+    # "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output/omnisvg_4b_20260410_215008/step_7500/pytorch_model_fsdp_0"
     # "output/omnisvg_4b_20260210_022748/step_33000/pytorch_model.bin",
     # "output/omnisvg_4b_20260210_022748/step_3000",
     # "output/omnisvg_4b_20260406_081050/step_5000/model.safetensors",
@@ -220,6 +235,8 @@ def parse_args():
                         help='Repetition penalty (default: task-specific)')
     parser.add_argument('--max-length', type=int, default=MAX_LENGTH,
                         help=f'Max token length (default: {MAX_LENGTH})')
+    parser.add_argument('--condition-max-length', type=int, default=1524,
+                        help='Max partial SVG condition tokens for code-complement')
     
     # Image-specific options
     parser.add_argument('--replace-background', action='store_true', default=True,
@@ -282,7 +299,7 @@ def is_local_path(path: str) -> bool:
 def load_models(model_size: str, weight_path: str = None, model_path: str = None,
                 use_train_tokenizer: bool = False, tokenization_config_path: str = None):
     """Load all models for a specific model size."""
-    global tokenizer, processor, sketch_decoder, svg_tokenizer, current_model_size
+    global tokenizer, processor, sketch_decoder, svg_tokenizer, svg_condition_encoder, current_model_size
     
     if weight_path is None:
         weight_path = get_config_value(model_size, 'huggingface', 'omnisvg_model')
@@ -380,9 +397,11 @@ def load_models(model_size: str, weight_path: str = None, model_path: str = None
         tok_cfg_path = tokenization_config_path or './configs/tokenization.yaml'
         token_cfg = TokenizationConfig.from_yaml(tok_cfg_path, model_size)
         svg_tokenizer = TrainAlignedSVGTokenizer(token_cfg)
+        svg_condition_encoder = TrainingSVGEncoder(token_cfg)
         print(f"Using TrainAlignedSVGTokenizer (config: {tok_cfg_path})")
     else:
         svg_tokenizer = SVGTokenizer(CONFIG_PATH, model_size=model_size)
+        svg_condition_encoder = None
     
     current_model_size = model_size
     
@@ -555,6 +574,223 @@ Requirements:
     return inputs
 
 
+def clean_generated_svg_token_ids(token_ids):
+    """Remove sequence-control tokens before SVG token decoding."""
+    ids = list(token_ids)
+
+    if ids and ids[0] == BOS_TOKEN_ID:
+        ids = ids[1:]
+
+    if EOS_TOKEN_ID in ids:
+        ids = ids[:ids.index(EOS_TOKEN_ID)]
+
+    return [tok for tok in ids if tok != PAD_TOKEN_ID]
+
+
+def tokenize_partial_svg_file(svg_path, condition_max_length=None):
+    """Tokenize a partial SVG file with the same SVG tokenizer used in training."""
+    if svg_condition_encoder is None:
+        raise RuntimeError(
+            "code-complement requires --use-train-tokenizer so partial SVGs "
+            "can be encoded with configs/tokenization.yaml"
+        )
+
+    svg = DeepSVG.load_svg(svg_path)
+    svg_tensors, color_tensors = svg.to_tensor(concat_groups=False, PAD_VAL=0)
+    tokens = svg_condition_encoder.tokenize_svg_tensors(svg_tensors, color_tensors)
+    tokens = svg_condition_encoder.add_special_tokens(tokens).tolist()
+
+    if condition_max_length and len(tokens) > condition_max_length:
+        # Match training: keep the tail so the latest partial paths remain visible.
+        tokens = tokens[-condition_max_length:]
+
+    return tokens
+
+
+def prepare_code_complement_inputs(svg_path, image, condition_max_length=None):
+    """Prepare Qwen image/text inputs plus partial SVG condition tokens."""
+    partial_tokens = tokenize_partial_svg_file(svg_path, condition_max_length)
+
+    base_name = os.path.splitext(os.path.basename(svg_path))[0]
+    codepoint, _, font_name = base_name.partition("_")
+    try:
+        char = chr(int(codepoint, 16))
+    except ValueError:
+        char = ""
+    char_label = f"{char} (U+{codepoint})" if char else f"U+{codepoint}"
+
+    instruction = (
+        "Complete the missing SVG path code for this Chinese glyph.\n"
+        f"Character: {char_label}\n"
+        "The partial SVG S_d is provided after this instruction as SVG tokens. "
+        "The attached PNG image I_d shows the corresponding incomplete glyph. "
+        "Output only the SVG path code fragments that should be appended to S_d."
+    )
+
+    messages = [
+        {"role": "system", "content": "You are an expert SVG code generator."},
+        {"role": "user", "content": [
+            {"type": "text", "text": instruction},
+            {"type": "image", "image": image},
+        ]}
+    ]
+    text_input = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    image_inputs, _ = process_vision_info(messages)
+    inputs = processor(
+        text=[text_input],
+        images=image_inputs,
+        padding=False,
+        truncation=False,
+        return_tensors="pt",
+    )
+
+    condition_ids = torch.tensor([partial_tokens], dtype=inputs["input_ids"].dtype)
+    condition_mask = torch.ones_like(condition_ids)
+    inputs["input_ids"] = torch.cat([inputs["input_ids"], condition_ids], dim=1)
+    inputs["attention_mask"] = torch.cat([inputs["attention_mask"], condition_mask], dim=1)
+
+    return inputs, {
+        "partial_token_count": len(partial_tokens),
+        "char_label": char_label,
+        "uid": base_name,
+    }
+
+
+def find_code_complement_samples(input_path):
+    """Find partial SVG/PNG pairs for code-complement inference."""
+    input_path = os.path.abspath(input_path)
+    if os.path.isfile(input_path):
+        svg_files = [input_path] if input_path.lower().endswith(".svg") else []
+        root = os.path.dirname(input_path)
+    else:
+        root = input_path
+        svg_dir = os.path.join(root, "svg")
+        search_dir = svg_dir if os.path.isdir(svg_dir) else root
+        svg_files = sorted(glob.glob(os.path.join(search_dir, "*.svg")))
+
+    samples = []
+    for svg_path in svg_files:
+        stem = os.path.splitext(os.path.basename(svg_path))[0]
+        candidate_dirs = [
+            os.path.join(root, "png"),
+            os.path.join(root, "images"),
+            os.path.dirname(svg_path),
+        ]
+        image_path = None
+        for folder in candidate_dirs:
+            for ext in SUPPORTED_FORMATS:
+                candidate = os.path.join(folder, f"{stem}{ext}")
+                if os.path.exists(candidate):
+                    image_path = candidate
+                    break
+                candidate = os.path.join(folder, f"{stem}{ext.upper()}")
+                if os.path.exists(candidate):
+                    image_path = candidate
+                    break
+            if image_path:
+                break
+
+        samples.append({
+            "svg_path": svg_path,
+            "image_path": image_path,
+            "stem": stem,
+        })
+
+    return samples
+
+
+def extract_svg_paths(svg_str):
+    """Extract path elements from an SVG string for appending."""
+    path_tags = re.findall(
+        r"<path\b[^>]*(?:/>\s*|>\s*</path\s*>)",
+        svg_str,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    normalized = []
+    for tag in path_tags:
+        tag = tag.strip()
+        if tag.lower().endswith("</path>"):
+            tag = re.sub(r">\s*</path\s*>$", "/>", tag, flags=re.IGNORECASE)
+        normalized.append(tag)
+    return normalized
+
+
+def combine_partial_and_completion(partial_svg, completion_svg):
+    """Append generated path elements to the partial SVG document."""
+    generated_paths = extract_svg_paths(completion_svg)
+    if not generated_paths:
+        return partial_svg
+
+    insertion = "\n  " + "\n  ".join(generated_paths) + "\n"
+    if re.search(r"</svg\s*>", partial_svg, flags=re.IGNORECASE):
+        return re.sub(r"</svg\s*>", insertion + "</svg>", partial_svg, count=1, flags=re.IGNORECASE)
+
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">\n'
+        f"{partial_svg}\n"
+        f"{insertion}"
+        "</svg>"
+    )
+
+
+def load_or_render_partial_image(svg_path, image_path, replace_background=True):
+    """Load the incomplete PNG, or render the partial SVG as a fallback."""
+    if image_path and os.path.exists(image_path):
+        image = Image.open(image_path)
+        processed, _ = preprocess_image_for_svg(
+            image,
+            replace_background=replace_background,
+            target_size=TARGET_IMAGE_SIZE,
+        )
+        return processed, False
+
+    with open(svg_path, "r", encoding="utf-8") as f:
+        partial_svg = f.read()
+    rendered = render_svg_to_image(partial_svg, size=TARGET_IMAGE_SIZE)
+    if rendered is None:
+        rendered = Image.new("RGB", (TARGET_IMAGE_SIZE, TARGET_IMAGE_SIZE), "white")
+    return rendered.convert("RGB"), True
+
+
+def save_code_complement_results(candidates, partial_svg_path, output_dir, base_name,
+                                 save_svg=True, save_png=False, save_all=False):
+    """Save generated fragments and merged partial+completion SVGs."""
+    os.makedirs(output_dir, exist_ok=True)
+    saved_files = []
+
+    if not candidates:
+        return saved_files
+
+    with open(partial_svg_path, "r", encoding="utf-8") as f:
+        partial_svg = f.read()
+
+    items = candidates if save_all else candidates[:1]
+    for i, cand in enumerate(items):
+        suffix = f"_candidate_{i+1}" if save_all else ""
+        fragment_svg = cand["svg"]
+        combined_svg = combine_partial_and_completion(partial_svg, fragment_svg)
+
+        if save_svg:
+            fragment_path = os.path.join(output_dir, f"{base_name}{suffix}_completion.svg")
+            with open(fragment_path, "w", encoding="utf-8") as f:
+                f.write(fragment_svg)
+            saved_files.append(fragment_path)
+
+            combined_path = os.path.join(output_dir, f"{base_name}{suffix}_combined.svg")
+            with open(combined_path, "w", encoding="utf-8") as f:
+                f.write(combined_svg)
+            saved_files.append(combined_path)
+
+        if save_png:
+            combined_img = render_svg_to_image(combined_svg, size=RENDER_SIZE)
+            if combined_img is not None:
+                png_path = os.path.join(output_dir, f"{base_name}{suffix}_combined.png")
+                combined_img.save(png_path)
+                saved_files.append(png_path)
+
+    return saved_files
+
+
 def render_svg_to_image(svg_str, size=None):
     """Render SVG to high-quality PIL Image"""
     if size is None:
@@ -654,9 +890,34 @@ def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, r
         for i in range(min(actual_samples, generated_ids_batch.shape[0])):
             try:
                 current_ids = generated_ids_batch[i:i+1]
+                raw_ids = current_ids[0].detach().cpu().tolist()
+                cleaned_ids = clean_generated_svg_token_ids(raw_ids)
+                if verbose:
+                    print(f"  Candidate {i} generated token count: {len(raw_ids)}")
+                    print(f"  Candidate {i} first 30 ids: {raw_ids[:30]}")
+                    print(f"  Candidate {i} last 30 ids: {raw_ids[-30:]}")
+                    special_tokens = {
+                        "BOS": BOS_TOKEN_ID,
+                        "EOS": EOS_TOKEN_ID,
+                        "PAD": PAD_TOKEN_ID,
+                    }
+                    for name, token_id in special_tokens.items():
+                        positions = [idx for idx, tok in enumerate(raw_ids) if tok == token_id]
+                        if positions:
+                            print(
+                                f"  Candidate {i} {name} token {token_id} "
+                                f"count={len(positions)} positions={positions[:20]}"
+                            )
+                    print(f"  Candidate {i} cleaned token count: {len(cleaned_ids)}")
+                    print(f"  Candidate {i} cleaned first 30 ids: {cleaned_ids[:30]}")
+                    print(f"  Candidate {i} cleaned last 30 ids: {cleaned_ids[-30:]}")
+                if not cleaned_ids:
+                    if verbose:
+                        print(f"  Candidate {i} skipped: no SVG tokens after cleanup")
+                    continue
                 
                 # Move to CPU for post-processing to avoid device issues
-                current_ids_cpu = current_ids.cpu()
+                current_ids_cpu = torch.tensor([cleaned_ids], dtype=torch.long, device='cpu')
                 
                 fake_wrapper = torch.cat([
                     torch.full((1, 1), BOS_TOKEN_ID, device='cpu'),
@@ -954,6 +1215,117 @@ def process_image_to_svg(args):
     print("="*60)
 
 
+def process_code_complement(args):
+    """Process SVG code-complement task."""
+    input_path = args.input
+
+    if not os.path.exists(input_path):
+        print(f"Error: Input path not found: {input_path}")
+        return
+
+    if svg_condition_encoder is None:
+        print("Error: code-complement requires --use-train-tokenizer")
+        print("       This uses configs/tokenization.yaml to encode partial SVG inputs.")
+        return
+
+    samples = find_code_complement_samples(input_path)
+    if not samples:
+        print(f"Error: No partial SVG files found in {input_path}")
+        return
+
+    print(f"\nFound {len(samples)} code-complement samples to process")
+    print("="*60)
+
+    os.makedirs(args.output, exist_ok=True)
+
+    task_key = "code-complement"
+    temperature = args.temperature if args.temperature is not None else TASK_CONFIGS[task_key].get("default_temperature", 0.3)
+    top_p = args.top_p if args.top_p is not None else TASK_CONFIGS[task_key].get("default_top_p", 0.90)
+    top_k = args.top_k if args.top_k is not None else TASK_CONFIGS[task_key].get("default_top_k", 50)
+    rep_penalty = args.repetition_penalty if args.repetition_penalty is not None else TASK_CONFIGS[task_key].get("default_repetition_penalty", 1.05)
+
+    if args.verbose:
+        print(f"Params: temp={temperature}, top_p={top_p}, top_k={top_k}, rep={rep_penalty}")
+        print(f"Condition max length: {args.condition_max_length}")
+
+    total_success = 0
+    total_failed = 0
+
+    for idx, sample in enumerate(samples):
+        svg_path = sample["svg_path"]
+        image_path = sample["image_path"]
+        base_name = sample["stem"]
+        print(f"\n[{idx+1}/{len(samples)}] Processing: {base_name}")
+
+        start_time = time.time()
+
+        try:
+            image, rendered_fallback = load_or_render_partial_image(
+                svg_path,
+                image_path,
+                replace_background=args.replace_background,
+            )
+            if args.verbose:
+                if image_path:
+                    print(f"  Image: {image_path}")
+                if rendered_fallback:
+                    print("  PNG not found; rendered partial SVG as image fallback")
+
+            inputs, meta = prepare_code_complement_inputs(
+                svg_path,
+                image,
+                condition_max_length=args.condition_max_length,
+            )
+
+            if args.verbose:
+                print(f"  Character: {meta['char_label']}")
+                print(f"  Partial SVG condition tokens: {meta['partial_token_count']}")
+
+            candidates = generate_candidates(
+                inputs, "code-complement", "image",
+                temperature, top_p, top_k, rep_penalty,
+                args.max_length, args.num_candidates,
+                verbose=args.verbose
+            )
+
+            elapsed = time.time() - start_time
+
+            if candidates:
+                saved = save_code_complement_results(
+                    candidates,
+                    svg_path,
+                    args.output,
+                    base_name,
+                    save_svg=True,
+                    save_png=args.save_png,
+                    save_all=args.save_all_candidates,
+                )
+                print(f"  ✓ Generated {len(candidates)} candidates in {elapsed:.2f}s")
+                print(f"  Saved: {', '.join(os.path.basename(f) for f in saved)}")
+                total_success += 1
+            else:
+                print(f"  ✗ Failed to generate valid SVG completion ({elapsed:.2f}s)")
+                total_failed += 1
+
+        except Exception as e:
+            print(f"  ✗ Error: {e}")
+            if args.verbose:
+                import traceback
+                traceback.print_exc()
+            total_failed += 1
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    print("\n" + "="*60)
+    print("Code-Complement Complete!")
+    print(f"  Success: {total_success}/{len(samples)}")
+    print(f"  Failed: {total_failed}/{len(samples)}")
+    print(f"  Output: {args.output}")
+    print("="*60)
+
+
 def main():
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     
@@ -982,8 +1354,10 @@ def main():
     # Process based on task type
     if args.task == "text-to-svg":
         process_text_to_svg(args)
-    else:  # image-to-svg
+    elif args.task == "image-to-svg":
         process_image_to_svg(args)
+    else:  # code-complement
+        process_code_complement(args)
     
     print("\nDone!")
 

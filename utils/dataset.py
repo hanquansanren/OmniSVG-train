@@ -6,8 +6,10 @@ Supports both local files and HuggingFace datasets.
 import os
 import io
 import re
+import json
 import random
 import datetime
+import tempfile
 import numpy as np
 import pandas as pd
 import torch
@@ -16,6 +18,7 @@ from PIL import Image
 from typing import Optional, List, Dict, Any, Tuple, Union
 from pathlib import Path
 from functools import lru_cache
+from xml.sax.saxutils import quoteattr
 
 # Optional imports
 try:
@@ -221,6 +224,7 @@ class OmniSVGDataset(Dataset):
         # Load configs
         self.token_config = token_config or TokenizationConfig()
         self.train_config = train_config or TrainConfig()
+        self.enable_code_complement = self.train_config.enable_code_complement
         
         # Initialize SVG tokenizer
         self.svg_tokenizer = SVGTokenizer(self.token_config)
@@ -262,25 +266,36 @@ class OmniSVGDataset(Dataset):
         self.data_source = "local"
         self.svg_folder = svg_folder
         self.png_folder = png_folder
+        self.json_folder = os.path.join(os.path.dirname(svg_folder), "json") if svg_folder else None
         
         # Load metadata
         self.meta_df = self._load_meta_file(meta_file)
         
         # Filter by token length (only if len_pix column exists)
         if 'len_pix' in self.meta_df.columns:
-            print(f"Filtering by token length: {self.max_len-50}")
+            length_margin = 50
+            max_total_len = self.max_len + self.text_len - length_margin
+            print(f"Filtering by token length: {max_total_len}")
             self.meta_df = self.meta_df[
                 (0 < self.meta_df['len_pix']) & 
-                (self.meta_df['len_pix'] <= (self.max_len-50))
+                (self.meta_df['len_pix'] <= max_total_len)
             ]
         else:
             print("Warning: 'len_pix' column not found in metadata, skipping token length filtering")
         
         # Build file indices for fast lookup
-        if svg_folder:
+        if svg_folder and os.path.isdir(svg_folder):
             self.svg_index = self._build_file_index(svg_folder, '.svg')
-        if png_folder:
+        else:
+            self.svg_index = {}
+        if png_folder and os.path.isdir(png_folder):
             self.png_index = self._build_file_index(png_folder, '.png')
+        else:
+            self.png_index = {}
+        if self.enable_code_complement and not os.path.isdir(self.json_folder):
+            raise FileNotFoundError(
+                f"Code complement training requires a json folder at {self.json_folder}"
+            )
         
         self.original_indices = list(range(len(self.meta_df)))
         print(f"Loaded {len(self.original_indices)} samples from local files")
@@ -366,7 +381,7 @@ class OmniSVGDataset(Dataset):
     def __len__(self) -> int:
         return len(self.duplicated_indices)
     
-    def __getitem__(self, index: int) -> Tuple[str, Image.Image, List[int]]:
+    def __getitem__(self, index: int) -> Union[Tuple[str, Image.Image, List[int]], Dict[str, Any]]:
         """Get a single sample."""
         max_retries = 20
         
@@ -428,10 +443,10 @@ class OmniSVGDataset(Dataset):
         
         return text, image, tokens.tolist()
     
-    def _get_local_sample(self, idx: int) -> Tuple[str, Image.Image, List[int]]:
+    def _get_local_sample(self, idx: int) -> Union[Tuple[str, Image.Image, List[int]], Dict[str, Any]]:
         """Get sample from local files."""
         row = self.meta_df.iloc[idx]
-        uid = row['id']
+        uid = str(row['id'])
         
         # Get text
         if random.random() < self.train_config.detail_prob:
@@ -459,16 +474,116 @@ class OmniSVGDataset(Dataset):
         if svg_path and os.path.exists(svg_path) and DEEPSVG_AVAILABLE:
             svg = SVG.load_svg(svg_path)
             svg_tensors, color_tensors = svg.to_tensor(concat_groups=False, PAD_VAL=0)
-            tokens = self.svg_tokenizer.tokenize_svg_tensors(svg_tensors, color_tensors)
+            svg_tokens = self.svg_tokenizer.tokenize_svg_tensors(svg_tensors, color_tensors)
         else:
             # Return empty tokens as fallback
-            tokens = np.array([], dtype=np.int64)
+            svg_tokens = np.array([], dtype=np.int64)
         
         # Apply masking and special tokens
-        tokens = self._apply_masking(tokens)
+        tokens = self._apply_masking(svg_tokens.copy())
         tokens = self.svg_tokenizer.add_special_tokens(tokens)
-        
-        return text, image, tokens.tolist()
+
+        if not self.enable_code_complement:
+            return text, image, tokens.tolist()
+
+        partial_tokens = self.svg_tokenizer.add_special_tokens(svg_tokens.copy())
+        code_data = self._get_code_complement_data(uid, image, partial_tokens.tolist())
+        code_data["text"] = text
+        code_data["standard_tokens"] = tokens.tolist()
+        return code_data
+
+    def _get_code_complement_data(
+        self,
+        uid: str,
+        image: Image.Image,
+        partial_svg_tokens: List[int],
+    ) -> Dict[str, Any]:
+        """Load inputs and replacement target for the SVG code-complement task."""
+        svg_path = self._find_file(uid, '.svg', self.svg_folder, self.svg_index)
+        png_path = self._find_file(uid, '.png', self.png_folder, self.png_index)
+        json_path = self._find_code_complement_json(uid)
+
+        missing = [
+            name for name, path in (
+                ("SVG", svg_path),
+                ("PNG", png_path),
+                ("JSON", json_path),
+            )
+            if not path or not os.path.exists(path)
+        ]
+        if missing:
+            raise FileNotFoundError(
+                f"Code complement sample {uid} is missing required files: {', '.join(missing)}"
+            )
+
+        with open(svg_path, 'r', encoding='utf-8') as f:
+            partial_svg = f.read().strip()
+
+        with open(json_path, 'r', encoding='utf-8') as f:
+            patch_data = json.load(f)
+
+        replacements = [
+            str(op.get("replacement", "")).strip()
+            for op in patch_data.get("operations", [])
+            if str(op.get("replacement", "")).strip()
+        ]
+        replacement_svg = self._wrap_replacements_as_svg(replacements, patch_data)
+        replacement_tokens = self._tokenize_svg_code(replacement_svg)
+        # Code-complement predicts an appended fragment, not a fresh SVG sequence.
+        # Keep EOS as the stop signal, but do not train the model to emit BOS.
+        replacement_tokens = np.append(replacement_tokens, self.token_config.eos_token_id)
+
+        char, codepoint, font_name = self._parse_uid(uid)
+        return {
+            "task_type": "code_complement",
+            "text": "",
+            "image": image,
+            "standard_tokens": partial_svg_tokens,
+            "partial_svg_tokens": partial_svg_tokens,
+            "code_complement_tokens": replacement_tokens.tolist(),
+            "partial_svg": partial_svg,
+            "char": char,
+            "codepoint": codepoint,
+            "font_name": font_name,
+            "uid": uid,
+        }
+
+    def _find_code_complement_json(self, uid: str) -> Optional[str]:
+        """Find the patch JSON for a local code-complement sample."""
+        if not self.json_folder:
+            return None
+        direct_path = os.path.join(self.json_folder, f"{uid}.json")
+        if os.path.exists(direct_path):
+            return direct_path
+        return None
+
+    def _parse_uid(self, uid: str) -> Tuple[str, str, str]:
+        """Parse ids like 9F9F_FZLiQBLSJF into character metadata."""
+        codepoint, _, font_name = uid.partition("_")
+        try:
+            char = chr(int(codepoint, 16))
+        except ValueError:
+            char = ""
+        return char, codepoint, font_name
+
+    def _wrap_replacements_as_svg(self, replacements: List[str], patch_data: Dict[str, Any]) -> str:
+        """Wrap replacement path fragments as a minimal SVG document."""
+        paths = []
+        operations = patch_data.get("operations", [])
+        for idx, replacement in enumerate(replacements):
+            fill = "#000"
+            if idx < len(operations):
+                fill = str(operations[idx].get("fill", "#000") or "#000")
+            paths.append(
+                f'<path fill={quoteattr(fill)} d={quoteattr(replacement)}/>'
+            )
+
+        body = "\n  ".join(paths)
+        return (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">'
+            f"\n  {body}\n"
+            "</svg>"
+        )
     
     def _process_image(self, image: Image.Image) -> Image.Image:
         """Process image to target format."""
@@ -559,7 +674,6 @@ class OmniSVGDataset(Dataset):
         
         try:
             # Save to temp file and load with deepsvg
-            import tempfile
             with tempfile.NamedTemporaryFile(mode='w', suffix='.svg', delete=False) as f:
                 f.write(svg_code)
                 temp_path = f.name

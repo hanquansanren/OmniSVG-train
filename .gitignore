@@ -129,6 +129,8 @@ public/uploads/
 storage/
 
 output/*
+output_*
+output_stage2/*
 output_debug/*
 output_debug*/*
 output_image/*

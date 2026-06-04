@@ -422,6 +422,7 @@ def create_collate_fn(
     processor: Any,
     text_len: int = 800,
     text_only_ratio: float = 0.5,
+    code_complement_ratio: float = 0.0,
 ):
     """
     Create collate function for DataLoader.
@@ -430,27 +431,46 @@ def create_collate_fn(
         processor: HuggingFace processor
         text_len: Maximum text length
         text_only_ratio: Ratio of text-only samples
+        code_complement_ratio: Ratio of SVG code-complement samples
     
     Returns:
         Collate function
     """
     system_prompt = "You are an expert SVG code generator."
     
-    task_counter = {"total": 0, "text": 0}
+    task_counter = {"total": 0, "text": 0, "code_complement": 0}
+
+    def normalize_sample(sample: Any) -> Dict[str, Any]:
+        if isinstance(sample, dict):
+            return sample
+        text, image, tokens = sample
+        return {
+            "text": text,
+            "image": image,
+            "standard_tokens": tokens,
+        }
 
     def collate_fn(batch):
-        text_oris, pil_images, pix_seq_lists = zip(*batch)
+        samples = [normalize_sample(sample) for sample in batch]
         
         batch_messages = []
+        batch_pix_seq_lists = []
+        batch_condition_seq_lists = []
         batch_task_types = []
         
         task_assignments = []
-        for _ in range(len(text_oris)):
+        for sample in samples:
             task_counter["total"] += 1
-            # Use text_only_ratio instead of hardcoded 50%
+            target_code_count = int(task_counter["total"] * code_complement_ratio)
             target_text_count = int(task_counter["total"] * text_only_ratio)
             
-            if task_counter["text"] < target_text_count:
+            if (
+                sample.get("task_type") == "code_complement"
+                and task_counter["code_complement"] < target_code_count
+            ):
+                task_assignments.append("code_complement")
+                task_counter["code_complement"] += 1
+            elif task_counter["text"] < target_text_count:
                 task_assignments.append("text")
                 task_counter["text"] += 1
             else:
@@ -460,7 +480,10 @@ def create_collate_fn(
         np.random.shuffle(indices)
         task_assignments = [task_assignments[i] for i in indices]
         
-        for text_ori, pil_image, task_type in zip(text_oris, pil_images, task_assignments):
+        for sample, task_type in zip(samples, task_assignments):
+            text_ori = sample.get("text", "")
+            pil_image = sample["image"]
+
             if task_type == 'text':
                 # Text-to-SVG task
                 messages = [{
@@ -470,8 +493,10 @@ def create_collate_fn(
                     "role": "user",
                     "content": [{"type": "text", "text": f"Generate SVG code for this text description: {text_ori}"}]
                 }]
+                pix_seq = sample["standard_tokens"]
+                condition_seq = []
                 batch_task_types.append("text")
-            else:
+            elif task_type == 'image':
                 # Image-to-SVG task
                 messages = [{
                     "role": "system",
@@ -483,11 +508,45 @@ def create_collate_fn(
                         {"type": "image", "image": pil_image},
                     ]
                 }]
+                pix_seq = sample["standard_tokens"]
+                condition_seq = []
                 batch_task_types.append("image")
+            elif task_type == 'code_complement':
+                if "code_complement_tokens" not in sample:
+                    raise ValueError("code_complement task requires code_complement_tokens in the dataset sample")
+                if "partial_svg_tokens" not in sample:
+                    raise ValueError("code_complement task requires partial_svg_tokens in the dataset sample")
+                char = sample.get("char", "") # 汉字
+                codepoint = sample.get("codepoint", "") # 汉字编码
+                char_label = f"{char} (U+{codepoint})" if char else f"U+{codepoint}"
+                prompt = (
+                    "Complete the missing SVG path code for this Chinese glyph.\n"
+                    f"Character: {char_label}\n"
+                    "The partial SVG S_d is provided after this instruction as SVG tokens. "
+                    "The attached PNG image I_d shows the corresponding incomplete glyph. "
+                    "Output only the SVG path code fragments that should be appended to S_d."
+                )
+                messages = [{
+                    "role": "system",
+                    "content": system_prompt
+                }, {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image", "image": pil_image},
+                    ]
+                }]
+                pix_seq = sample["code_complement_tokens"]
+                condition_seq = sample["partial_svg_tokens"]
+                batch_task_types.append("code_complement")
+            else:
+                raise ValueError(f"Unknown task_type: {task_type}")
             
             batch_messages.append(messages)
+            batch_pix_seq_lists.append(pix_seq)
+            batch_condition_seq_lists.append(condition_seq)
         
-        return batch_messages, list(pix_seq_lists), batch_task_types
+        return batch_messages, batch_condition_seq_lists, batch_pix_seq_lists, batch_task_types
     
     return collate_fn
 
@@ -496,6 +555,7 @@ def create_collate_fn(
 
 def process_mixed_batch(
     batch_messages: List[Any],
+    condition_seq_lists: List[List[int]],
     pix_seq_lists: List[List[int]],
     batch_task_types: List[str],
     processor: Any,
@@ -503,7 +563,7 @@ def process_mixed_batch(
 ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor], 
            Optional[torch.Tensor], torch.Tensor, Dict[str, List[int]]]:
     """
-    Process a mixed batch of text and image tasks.
+    Process a mixed batch of text, image, and code-complement tasks.
     
     Returns:
         input_ids, attention_mask, pixel_values, image_grid_thw, labels, task_masks
@@ -511,24 +571,27 @@ def process_mixed_batch(
     batch_input_ids = []
     batch_attention_mask = []
     batch_labels = []
-    task_masks = {'text': [], 'image': []}
+    task_masks = {'text': [], 'image': [], 'code_complement': []}
     
     pad_token_id = config.tokenization.pad_token_id
-    max_len = config.training.max_seq_length + config.training.text_max_length
+    context_max_len = config.training.text_max_length
+    target_max_len = config.training.max_seq_length
     
     # Separate tasks
     text_indices = []
-    image_indices = []
-    image_messages = []
+    vision_indices = []
+    vision_messages = []
     
     for i, (task_type, messages) in enumerate(zip(batch_task_types, batch_messages)):
         if task_type == "text":
             text_indices.append(i)
             task_masks['text'].append(i)
+        elif task_type in ("image", "code_complement"):
+            vision_indices.append(i)
+            task_masks[task_type].append(i)
+            vision_messages.append(messages)
         else:
-            image_indices.append(i)
-            task_masks['image'].append(i)
-            image_messages.append(messages)
+            raise ValueError(f"Unknown task_type: {task_type}")
     
     # Process text-only samples
     if text_indices:
@@ -550,22 +613,27 @@ def process_mixed_batch(
             input_ids, attention_mask, labels = _process_sample(
                 inputs['input_ids'][idx],
                 inputs['attention_mask'][idx],
+                condition_seq_lists[i],
                 pix_seq_lists[i],
-                max_len,
+                context_max_len,
+                target_max_len,
             )
             batch_input_ids.append((i, input_ids))
             batch_attention_mask.append((i, attention_mask))
             batch_labels.append((i, labels))
     
-    # Process image samples
+    # Process image-conditioned samples
     pixel_values = None
     image_grid_thw = None
     
-    if image_indices and process_vision_info is not None:
+    if vision_indices:
+        if process_vision_info is None:
+            raise RuntimeError("qwen_vl_utils is required for image-conditioned tasks")
+
         all_text_inputs = []
         all_image_inputs = []
         
-        for messages in image_messages:
+        for messages in vision_messages:
             text_input = processor.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
@@ -584,12 +652,14 @@ def process_mixed_batch(
         pixel_values = inputs.get('pixel_values')
         image_grid_thw = inputs.get('image_grid_thw')
         
-        for idx, i in enumerate(image_indices):
+        for idx, i in enumerate(vision_indices):
             input_ids, attention_mask, labels = _process_sample(
                 inputs['input_ids'][idx].tolist(),
                 inputs['attention_mask'][idx].tolist(),
+                condition_seq_lists[i],
                 pix_seq_lists[i],
-                max_len,
+                context_max_len,
+                target_max_len,
             )
             batch_input_ids.append((i, input_ids))
             batch_attention_mask.append((i, attention_mask))
@@ -618,26 +688,119 @@ def process_mixed_batch(
     return input_ids, attention_mask, pixel_values, image_grid_thw, labels, task_masks
 
 
+CONTEXT_TRUNCATION_LOG_EVERY = 1000
+_context_truncation_stats = {
+    "samples": 0,
+    "truncated_samples": 0,
+    "total_removed_tokens": 0,
+    "total_removed_instruction_tokens": 0,
+    "total_removed_condition_tokens": 0,
+    "max_removed_tokens": 0,
+}
+
+
+def _record_context_truncation(
+    removed_instruction_tokens: int,
+    removed_condition_tokens: int,
+) -> None:
+    """Track how often context tokens are trimmed before the target SVG."""
+    stats = _context_truncation_stats
+    stats["samples"] += 1
+    removed_tokens = removed_instruction_tokens + removed_condition_tokens
+
+    if removed_tokens > 0:
+        stats["truncated_samples"] += 1
+        stats["total_removed_tokens"] += removed_tokens
+        stats["total_removed_instruction_tokens"] += removed_instruction_tokens
+        stats["total_removed_condition_tokens"] += removed_condition_tokens
+        stats["max_removed_tokens"] = max(stats["max_removed_tokens"], removed_tokens)
+
+    should_log = (
+        stats["samples"] % CONTEXT_TRUNCATION_LOG_EVERY == 0
+        or (removed_tokens > 0 and stats["truncated_samples"] == 1)
+    )
+    if not should_log:
+        return
+
+    truncated_samples = stats["truncated_samples"]
+    truncation_ratio = 100.0 * truncated_samples / stats["samples"]
+    avg_removed = (
+        stats["total_removed_tokens"] / truncated_samples
+        if truncated_samples
+        else 0.0
+    )
+    avg_instruction_removed = (
+        stats["total_removed_instruction_tokens"] / truncated_samples
+        if truncated_samples
+        else 0.0
+    )
+    avg_condition_removed = (
+        stats["total_removed_condition_tokens"] / truncated_samples
+        if truncated_samples
+        else 0.0
+    )
+    print(
+        "[Context truncation] "
+        f"samples={stats['samples']} "
+        f"truncated={truncated_samples} "
+        f"ratio={truncation_ratio:.2f}% "
+        f"avg_removed={avg_removed:.1f} "
+        f"avg_instruction_removed={avg_instruction_removed:.1f} "
+        f"avg_condition_removed={avg_condition_removed:.1f} "
+        f"max_removed={stats['max_removed_tokens']} "
+        f"last_instruction_removed={removed_instruction_tokens} "
+        f"last_condition_removed={removed_condition_tokens}"
+    )
+
+
 def _process_sample(
     base_input_ids: List[int],
     base_attention_mask: List[int],
+    condition_seq: List[int],
     pix_seq: List[int],
-    max_len: int,
+    context_max_len: int,
+    target_max_len: int,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Build one sample and apply only the global length cap."""
-    current_input_ids = base_input_ids + pix_seq
-    current_attention_mask = base_attention_mask + [1] * len(pix_seq)
-    
-    instruction_len = len(base_input_ids)
-    current_labels = [-100] * instruction_len + pix_seq
-    
-    input_ids = current_input_ids[:max_len]
-    attention_mask = current_attention_mask[:max_len]
-    labels = current_labels[:max_len]
+    """Build one sample with separate context and target token budgets."""
+    target_tokens = pix_seq[:target_max_len]
+    context_budget = context_max_len + (target_max_len - len(target_tokens))
+    condition_tokens = list(condition_seq or [])
+
+    removed_instruction_tokens = 0
+    removed_condition_tokens = 0
+
+    if context_budget <= 0:
+        removed_instruction_tokens = len(base_input_ids)
+        removed_condition_tokens = len(condition_tokens)
+        base_input_ids = []
+        base_attention_mask = []
+        condition_tokens = []
+    elif len(base_input_ids) >= context_budget:
+        removed_instruction_tokens = len(base_input_ids) - context_budget
+        removed_condition_tokens = len(condition_tokens)
+        base_input_ids = base_input_ids[-context_budget:]
+        base_attention_mask = base_attention_mask[-context_budget:]
+        condition_tokens = []
+    else:
+        condition_budget = context_budget - len(base_input_ids)
+        if len(condition_tokens) > condition_budget:
+            removed_condition_tokens = len(condition_tokens) - condition_budget
+            condition_tokens = condition_tokens[-condition_budget:] if condition_budget > 0 else []
+
+    _record_context_truncation(
+        removed_instruction_tokens,
+        removed_condition_tokens,
+    )
+
+    current_input_ids = base_input_ids + condition_tokens + target_tokens
+    current_attention_mask = base_attention_mask + [1] * (len(condition_tokens) + len(target_tokens))
+
+    context_len = len(base_input_ids) + len(condition_tokens)
+    labels = [-100] * context_len + target_tokens
     
     return (
-        torch.tensor(input_ids, dtype=torch.long),
-        torch.tensor(attention_mask, dtype=torch.long),
+        torch.tensor(current_input_ids, dtype=torch.long),
+        torch.tensor(current_attention_mask, dtype=torch.long),
         torch.tensor(labels, dtype=torch.long),
     )
 
@@ -665,12 +828,12 @@ def compute_task_specific_losses(
     outputs: Any,
     labels: torch.Tensor,
     task_masks: Dict[str, List[int]],
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    Compute separate losses for text and image tasks.
+    Compute separate losses for text, image, and code-complement tasks.
     
     Returns:
-        text_loss, image_loss
+        text_loss, image_loss, code_complement_loss
     """
     batch_size = outputs.logits.size(0)
     device = outputs.logits.device
@@ -691,11 +854,16 @@ def compute_task_specific_losses(
     # Separate by task
     text_losses = [per_sample_loss[i] for i in task_masks['text']]
     image_losses = [per_sample_loss[i] for i in task_masks['image']]
+    code_complement_losses = [per_sample_loss[i] for i in task_masks['code_complement']]
     
     text_loss = torch.stack(text_losses).mean() if text_losses else torch.tensor(0.0, device=device)
     image_loss = torch.stack(image_losses).mean() if image_losses else torch.tensor(0.0, device=device)
+    code_complement_loss = (
+        torch.stack(code_complement_losses).mean()
+        if code_complement_losses else torch.tensor(0.0, device=device)
+    )
     
-    return text_loss, image_loss
+    return text_loss, image_loss, code_complement_loss
 
 
 # ============================================================================
@@ -773,6 +941,7 @@ def train(args, config: OmniSVGConfig):
         processor=processor,
         token_config=config.tokenization,
         train_config=config.training,
+        target_image_size=config.training.target_image_size,
     )
     
     val_dataset = OmniSVGDataset(
@@ -785,6 +954,7 @@ def train(args, config: OmniSVGConfig):
         processor=processor,
         token_config=config.tokenization,
         train_config=config.training,
+        target_image_size=config.training.target_image_size,
     )
     
     # Create collate functions
@@ -792,11 +962,13 @@ def train(args, config: OmniSVGConfig):
         processor, 
         text_len=config.training.text_max_length,
         text_only_ratio=config.training.text_only_ratio,
+        code_complement_ratio=config.training.code_complement_ratio,
     )
     val_collate = create_collate_fn(
         processor,
         text_len=config.training.text_max_length,
         text_only_ratio=config.training.text_only_ratio,
+        code_complement_ratio=config.training.code_complement_ratio,
     )
     
     # Create dataloaders
@@ -924,6 +1096,8 @@ def train(args, config: OmniSVGConfig):
             "use_gradient_checkpointing": config.training.use_gradient_checkpointing,
             "text_loss_weight": config.training.text_loss_weight,
             "image_loss_weight": config.training.image_loss_weight,
+            "code_complement_ratio": config.training.code_complement_ratio,
+            "code_complement_loss_weight": config.training.code_complement_loss_weight,
         }
         
         # 初始化wandb
@@ -968,6 +1142,7 @@ def train(args, config: OmniSVGConfig):
     # 只在log时才转换为Python数值，减少CPU-GPU同步开销
     text_losses = []
     image_losses = []
+    code_complement_losses = []
     grad_norms = []
     
     for epoch in range(starting_epoch, config.training.epochs):
@@ -982,12 +1157,12 @@ def train(args, config: OmniSVGConfig):
             desc=f"Epoch {epoch + 1}"
         )
         
-        for batch_messages, pix_seq_lists, batch_task_types in train_dataloader:
+        for batch_messages, condition_seq_lists, pix_seq_lists, batch_task_types in train_dataloader:
             with accelerator.accumulate(model):
                 # Process batch
                 input_ids, attention_mask, pixel_values, image_grid_thw, labels, task_masks = \
                     process_mixed_batch(
-                        batch_messages, pix_seq_lists, batch_task_types, processor, config
+                        batch_messages, condition_seq_lists, pix_seq_lists, batch_task_types, processor, config
                     )
                 
                 # Move to device
@@ -1028,11 +1203,12 @@ def train(args, config: OmniSVGConfig):
                 )
                 
                 # Compute losses
-                text_loss, image_loss = compute_task_specific_losses(outputs, labels, task_masks)
+                text_loss, image_loss, code_complement_loss = compute_task_specific_losses(outputs, labels, task_masks)
                 
                 # Weighted loss
                 loss = (config.training.text_loss_weight * text_loss + 
-                       config.training.image_loss_weight * image_loss)
+                       config.training.image_loss_weight * image_loss +
+                       config.training.code_complement_loss_weight * code_complement_loss)
                 
                 # ⚡ 性能优化：保存tensor而不是立即.item()，避免CPU-GPU同步
                 # 只在需要记录日志时才转换为Python数值
@@ -1041,6 +1217,8 @@ def train(args, config: OmniSVGConfig):
                     text_losses.append(text_loss.detach())
                 if image_loss > 0:
                     image_losses.append(image_loss.detach())
+                if code_complement_loss > 0:
+                    code_complement_losses.append(code_complement_loss.detach())
                 
                 # Backward pass
                 accelerator.backward(loss)
@@ -1076,11 +1254,12 @@ def train(args, config: OmniSVGConfig):
                     # Logging
                     if global_step % config.training.log_every == 0:
                         log_metrics(
-                            writer, global_step, text_losses, image_losses, 
+                            writer, global_step, text_losses, image_losses, code_complement_losses,
                             grad_norms, lr_scheduler, accelerator, use_wandb
                         )
                         text_losses = []
                         image_losses = []
+                        code_complement_losses = []
                         grad_norms = []
                     
                     # Save checkpoint
@@ -1180,15 +1359,16 @@ def validate(
     total_losses = []
     text_losses = []
     image_losses = []
+    code_complement_losses = []
     
     with torch.no_grad():
-        for batch_messages, pix_seq_lists, batch_task_types in tqdm(
+        for batch_messages, condition_seq_lists, pix_seq_lists, batch_task_types in tqdm(
             val_dataloader, 
             disable=not accelerator.is_local_main_process
         ):
             input_ids, attention_mask, pixel_values, image_grid_thw, labels, task_masks = \
                 process_mixed_batch(
-                    batch_messages, pix_seq_lists, batch_task_types, processor, config
+                    batch_messages, condition_seq_lists, pix_seq_lists, batch_task_types, processor, config
                 )
             
             # Move to device
@@ -1208,24 +1388,28 @@ def validate(
                 labels=None,
             )
             
-            text_loss, image_loss = compute_task_specific_losses(outputs, labels, task_masks)
-            total_loss = text_loss + image_loss
+            text_loss, image_loss, code_complement_loss = compute_task_specific_losses(outputs, labels, task_masks)
+            total_loss = text_loss + image_loss + code_complement_loss
             
             # Gather across processes
             all_total = accelerator.gather_for_metrics(total_loss)
             all_text = accelerator.gather_for_metrics(text_loss)
             all_image = accelerator.gather_for_metrics(image_loss)
+            all_code = accelerator.gather_for_metrics(code_complement_loss)
             
             total_losses.append(all_total.mean().item())
             if all_text.sum() > 0:
                 text_losses.append(all_text.mean().item())
             if all_image.sum() > 0:
                 image_losses.append(all_image.mean().item())
+            if all_code.sum() > 0:
+                code_complement_losses.append(all_code.mean().item())
     
     # Compute averages
     avg_total = np.mean(total_losses) if total_losses else 0
     avg_text = np.mean(text_losses) if text_losses else 0
     avg_image = np.mean(image_losses) if image_losses else 0
+    avg_code = np.mean(code_complement_losses) if code_complement_losses else 0
     
     # 打印验证结果
     print(f"\n{'='*60}")
@@ -1233,6 +1417,7 @@ def validate(
     print(f"  Total Loss:  {avg_total:.4f}")
     print(f"  Image Loss:  {avg_image:.4f}")
     print(f"  Text Loss:   {avg_text:.4f}")
+    print(f"  Code Loss:   {avg_code:.4f}")
     print(f"{'='*60}\n")
     
     if accelerator.is_main_process:
@@ -1240,12 +1425,14 @@ def validate(
         writer.add_scalar("validation/total_loss", avg_total, step)
         # writer.add_scalar("validation/text_loss", avg_text, step)
         writer.add_scalar("validation/image_loss", avg_image, step)
+        writer.add_scalar("validation/code_complement_loss", avg_code, step)
         
         # Weights & Biases logging
         if WANDB_AVAILABLE and wandb.run is not None:
             val_metrics = {
                 "val/loss_total": avg_total,
                 "val/loss_image": avg_image,
+                "val/loss_code_complement": avg_code,
             }
             if avg_text > 0:
                 val_metrics["val/loss_text"] = avg_text
@@ -1259,6 +1446,7 @@ def log_metrics(
     step: int,
     text_losses: List,  # 现在接受tensor列表
     image_losses: List,  # 现在接受tensor列表
+    code_complement_losses: List,
     grad_norms: List,  # 现在接受tensor列表
     lr_scheduler: Any,
     accelerator: Accelerator,
@@ -1285,22 +1473,27 @@ def log_metrics(
     
     text_losses_float = to_float_list(text_losses)
     image_losses_float = to_float_list(image_losses)
+    code_losses_float = to_float_list(code_complement_losses)
     grad_norms_float = to_float_list(grad_norms)
     
     avg_text = np.mean(text_losses_float) if text_losses_float else 0
     avg_image = np.mean(image_losses_float) if image_losses_float else 0
-    avg_total = np.mean(text_losses_float + image_losses_float) if (text_losses_float + image_losses_float) else 0
+    all_task_losses = text_losses_float + image_losses_float + code_losses_float
+    avg_code = np.mean(code_losses_float) if code_losses_float else 0
+    avg_total = np.mean(all_task_losses) if all_task_losses else 0
     avg_grad = np.mean(grad_norms_float) if grad_norms_float else 0
     current_lr = lr_scheduler.get_last_lr()[0]
     
     # 打印训练指标到控制台
-    print(f"\n[Step {step}] Loss: {avg_total:.4f} (Image: {avg_image:.4f}, Text: {avg_text:.4f}) | "
+    print(f"\n[Step {step}] Loss: {avg_total:.4f} "
+          f"(Image: {avg_image:.4f}, Text: {avg_text:.4f}, Code: {avg_code:.4f}) | "
           f"Grad Norm: {avg_grad:.4f} | LR: {current_lr:.2e}")
     
     # TensorBoard logging
     writer.add_scalar("loss/total", avg_total, step)
     # writer.add_scalar("loss/text_task", avg_text, step)
     writer.add_scalar("loss/image_task", avg_image, step)
+    writer.add_scalar("loss/code_complement_task", avg_code, step)
     writer.add_scalar("lr", current_lr, step)
     writer.add_scalar("grad_norm", avg_grad, step)
     
@@ -1310,6 +1503,7 @@ def log_metrics(
             "train/loss_total": avg_total,
             "train/loss_image": avg_image,
             "train/loss_text": avg_text,
+            "train/loss_code_complement": avg_code,
             "train/learning_rate": current_lr,
             "train/grad_norm": avg_grad,
         }, step=step)
