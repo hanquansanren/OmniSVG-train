@@ -86,7 +86,7 @@ task_configs:
     default_temperature: 0.01 # 0.3
     default_top_p: 1.0 # 0.90
     default_top_k: 1 # 50
-    default_repetition_penalty: 1.03 # 1.05
+    default_repetition_penalty: 1.05 # 1.05
 
 generation:
   default_num_candidates: 1

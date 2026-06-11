@@ -1,0 +1,54 @@
+# FSDP Configuration - faster single-node setup for Qwen2.5-VL/OmniSVG
+#
+# This is a middle ground between DDP and FULL_SHARD:
+# - parameters are kept replicated, avoiding per-layer all-gather overhead
+# - gradients and optimizer states are still sharded, reducing memory vs DDP
+
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+
+fsdp_config:
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: Qwen2_5_VLDecoderLayer,Qwen2_5_VLVisionBlock
+
+  # Faster than FULL_SHARD on a single node because it avoids repeatedly
+  # all-gathering parameters. Uses more memory than FULL_SHARD but less than DDP.
+  fsdp_sharding_strategy: SHARD_GRAD_OP
+
+  fsdp_backward_prefetch: BACKWARD_PRE
+  fsdp_forward_prefetch: false
+
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+
+  # Each rank loads the same local checkpoint before FSDP wrapping.
+  fsdp_sync_module_states: false
+  fsdp_cpu_ram_efficient_loading: false
+
+  # Keep original parameter objects so the optimizer path stays closest to DDP.
+  # The earlier empty-shard issue came from FULL/HYBRID shard + activation
+  # checkpointing; this speed config uses SHARD_GRAD_OP and wraps vision blocks.
+  fsdp_use_orig_params: true
+
+  fsdp_offload_params: false
+
+  # Use model-level gradient checkpointing from the train config instead.
+  fsdp_activation_checkpointing: false
+
+mixed_precision: bf16
+downcast_bf16: 'no'
+
+num_processes: 4
+gpu_ids: all
+use_cpu: false
+
+num_machines: 1
+machine_rank: 0
+main_process_ip: null
+main_process_port: null
+
+main_training_function: main
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false

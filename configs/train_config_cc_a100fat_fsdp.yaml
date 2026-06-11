@@ -1,9 +1,11 @@
-# OmniSVG Stage 2 Configuration - SVG code-complement training
+# OmniSVG Stage 2 Configuration - SVG code-complement training with stable FSDP
 
 model:
   size: "4B"
   use_flash_attn: true
   torch_dtype: "bfloat16"
+  # Use HuggingFace/model-level checkpointing to reduce activation memory.
+  # Keep fsdp_activation_checkpointing=false in the FSDP config to avoid double checkpointing.
   use_gradient_checkpointing: true
 
 data:

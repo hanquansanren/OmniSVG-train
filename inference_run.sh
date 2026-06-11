@@ -14,11 +14,14 @@ set -euo pipefail
 
 PYTHON="${PYTHON:-python}"
 
-TASK="image-to-svg"
-INPUT="./backup/example_li/png"
+TASK="code-complement"
+# image-to-svg
+INPUT="./backup/my_lis2_1_overfit20"
 # "./backup/examples_zhuan3"
-OUTPUT="./output_image_li2"
-WEIGHT_MODEL="output/omnisvg_4b_20260503_020350/step_10000"
+# "./backup/my_lis2_1_overfit20"
+OUTPUT="./output_cc8"
+WEIGHT_MODEL="output_stage2/omnisvg_stage2_4b_20260605_232357/step_7500"
+# "output_stage2/omnisvg_stage2_4b_20260605_073945/step_10000"
 # "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output/omnisvg_4b_20260410_215008/step_7500"
 
 
@@ -69,6 +72,10 @@ if [ "$SAVE_PNG" = "true" ]; then
 fi
 if [ "$SAVE_ALL_CANDIDATES" = "true" ]; then
   CMD+=( --save-all-candidates )
+fi
+
+if [ "$TASK" = "code-complement" ]; then
+  CMD+=( --use-train-tokenizer --verbose )
 fi
 
 if [ "${#EXTRA_ARGS[@]}" -gt 0 ]; then

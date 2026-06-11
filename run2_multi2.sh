@@ -92,11 +92,13 @@ CONFIG_DIR="./configs"
 #   - "train_config_code_complement.yaml" (Stage 2 SVG code-complement)
 #   - "train_config_low_memory.yaml" (optimized for low VRAM)
 #   - Or create your own custom config file
-TRAIN_CONFIG_FILE="train_config_cc_a100fat.yaml"
+TRAIN_CONFIG_FILE="train_config_cc_a100fat_fsdp.yaml"
 
 # Accelerate config file (for DeepSpeed, FSDP, DDP, etc.)
-# A800 80GB 上 4B/3B 基座优先使用 DDP，避免 FSDP + checkpointing 在视觉塔反传时出现空 shard。
-ACCELERATE_CONFIG="configs/ddp_config.yaml"
+# Faster FSDP path: shards gradients/optimizer state but avoids FULL_SHARD all-gather overhead.
+ACCELERATE_CONFIG="configs/fsdp_config_speed.yaml"
+# ACCELERATE_CONFIG="configs/ddp_config.yaml"
+# ACCELERATE_CONFIG="configs/fsdp_config_stable.yaml"
 # ACCELERATE_CONFIG="configs/fsdp_config_performance.yaml"
 # ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"
 # ACCELERATE_CONFIG="configs/fsdp_config_minimal.yaml"
