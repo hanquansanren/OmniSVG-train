@@ -81,6 +81,10 @@ MODEL_DEFAULTS = {
         "pad_token_id": 151643,
         "bos_token_id": 196998,
         "eos_token_id": 196999,
+        "skeleton_start_token": 197000,
+        "skeleton_end_token": 197001,
+        "replacement_start_token": 197002,
+        "replacement_end_token": 197003,
         "mask_token": 151937,
         "eom_token": 151938,
         "cmd_move": 151939,
@@ -100,6 +104,10 @@ MODEL_DEFAULTS = {
         "pad_token_id": 151643,
         "bos_token_id": 197126,
         "eos_token_id": 197127,
+        "skeleton_start_token": 197128,
+        "skeleton_end_token": 197129,
+        "replacement_start_token": 197130,
+        "replacement_end_token": 197131,
         "mask_token": 152065,
         "eom_token": 152066,
         "cmd_move": 152067,
@@ -133,6 +141,12 @@ class TokenizationConfig:
     pad_token_id: int = 151643
     bos_token_id: int = 196998
     eos_token_id: int = 196999
+    
+    # Skeleton CoT marker tokens
+    skeleton_start_token: int = 197000
+    skeleton_end_token: int = 197001
+    replacement_start_token: int = 197002
+    replacement_end_token: int = 197003
     
     # SVG tokens
     num_svg_end: int = 1
@@ -193,6 +207,10 @@ class TokenizationConfig:
             pad_token_id=special.get('pad_token_id', defaults['pad_token_id']),
             bos_token_id=special.get('bos_token_id', defaults['bos_token_id']),
             eos_token_id=special.get('eos_token_id', defaults['eos_token_id']),
+            skeleton_start_token=special.get('skeleton_start_token_id', defaults['skeleton_start_token']),
+            skeleton_end_token=special.get('skeleton_end_token_id', defaults['skeleton_end_token']),
+            replacement_start_token=special.get('replacement_start_token_id', defaults['replacement_start_token']),
+            replacement_end_token=special.get('replacement_end_token_id', defaults['replacement_end_token']),
             num_svg_end=svg.get('num_svg_end', 1),
             mask_token=svg.get('mask_token_offset', defaults['mask_token']),
             eom_token=svg.get('eom_token_offset', defaults['eom_token']),
@@ -256,6 +274,7 @@ class TrainConfig:
     text_only_ratio: float = 0.50
     code_complement_ratio: float = 0.0
     enable_code_complement: bool = False
+    enable_skeleton_cot: bool = False
     text_loss_weight: float = 1.5
     image_loss_weight: float = 1.0
     code_complement_loss_weight: float = 0.0
@@ -327,6 +346,7 @@ class TrainConfig:
             text_only_ratio=as_float(task.get('initial_text_only_ratio'), 0.50),
             code_complement_ratio=as_float(task.get('code_complement_ratio'), 0.0),
             enable_code_complement=as_float(task.get('code_complement_ratio'), 0.0) > 0,
+            enable_skeleton_cot=bool(task.get('skeleton_cot', False)),
             text_loss_weight=as_float(loss.get('text_task'), 1.5),
             image_loss_weight=as_float(loss.get('image_task'), 1.0),
             code_complement_loss_weight=as_float(loss.get('code_complement_task'), 0.0),
@@ -428,6 +448,13 @@ class OmniSVGConfig:
             print(f"Warning: {train_path} not found, using defaults")
             self.training = TrainConfig(model_size=model_size)
         
+        # Skeleton CoT requires 4 extra token IDs beyond the base extended vocab
+        if self.training.enable_skeleton_cot:
+            needed = self.tokenization.replacement_end_token + 1
+            if self.tokenization.extended_vocab_size < needed:
+                print(f"Skeleton CoT enabled: expanding vocab {self.tokenization.extended_vocab_size} -> {needed}")
+                self.tokenization.extended_vocab_size = needed
+
         # Data config
         self.data = DataConfig(data_dir=self.training.data_dir)
     

@@ -16,11 +16,13 @@ PYTHON="${PYTHON:-python}"
 
 TASK="code-complement"
 # image-to-svg
-INPUT="./backup/my_lis2_1_overfit20"
+INPUT="./backup/codecomplete_set2"
 # "./backup/examples_zhuan3"
 # "./backup/my_lis2_1_overfit20"
-OUTPUT="./output_cc8"
-WEIGHT_MODEL="output_stage2/omnisvg_stage2_4b_20260605_232357/step_7500"
+OUTPUT="./output_cot14k"
+WEIGHT_MODEL="output_stage2/omnisvg_4b_20260708_091120/step_14000"
+# "output_stage2/omnisvg_4b_20260707_063451/step_18000"
+# "output_stage2/omnisvg_stage2_4b_20260605_232357/step_7500"
 # "output_stage2/omnisvg_stage2_4b_20260605_073945/step_10000"
 # "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output/omnisvg_4b_20260410_215008/step_7500"
 
@@ -29,6 +31,9 @@ WEIGHT_MODEL="output_stage2/omnisvg_stage2_4b_20260605_232357/step_7500"
 
 SAVE_PNG="true"
 SAVE_ALL_CANDIDATES="true"
+
+# Enable skeleton chain-of-thought post-processing (strip skeleton, keep replacement only)
+SKELETON_COT="true"
 # 基底模型目录：按顺序使用第一个在磁盘上存在的路径（与 tokenization.yaml 多机写法一致）
 # 覆盖自动选择：启动前执行 export BASE_MODEL=/你的/路径
 BASE_MODEL_CANDIDATES=(
@@ -76,6 +81,9 @@ fi
 
 if [ "$TASK" = "code-complement" ]; then
   CMD+=( --use-train-tokenizer --verbose )
+  if [ "$SKELETON_COT" = "true" ]; then
+    CMD+=( --skeleton-cot )
+  fi
 fi
 
 if [ "${#EXTRA_ARGS[@]}" -gt 0 ]; then
@@ -85,10 +93,11 @@ fi
 echo "============================================================"
 echo "OmniSVG Inference"
 echo "============================================================"
-echo "Task:   ${TASK}"
-echo "Input:  ${INPUT}"
-echo "Output: ${OUTPUT}"
-echo "Model:  ${BASE_MODEL}"
+echo "Task:         ${TASK}"
+echo "Input:        ${INPUT}"
+echo "Output:       ${OUTPUT}"
+echo "Model:        ${BASE_MODEL}"
+echo "Skeleton CoT: ${SKELETON_COT}"
 echo "------------------------------------------------------------"
 echo "Command: ${CMD[*]}"
 echo "============================================================"

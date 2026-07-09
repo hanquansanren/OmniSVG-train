@@ -225,6 +225,7 @@ class OmniSVGDataset(Dataset):
         self.token_config = token_config or TokenizationConfig()
         self.train_config = train_config or TrainConfig()
         self.enable_code_complement = self.train_config.enable_code_complement
+        self.enable_skeleton_cot = self.train_config.enable_skeleton_cot
         
         # Initialize SVG tokenizer
         self.svg_tokenizer = SVGTokenizer(self.token_config)
@@ -522,16 +523,18 @@ class OmniSVGDataset(Dataset):
         with open(json_path, 'r', encoding='utf-8') as f:
             patch_data = json.load(f)
 
-        replacements = [
-            str(op.get("replacement", "")).strip()
-            for op in patch_data.get("operations", [])
-            if str(op.get("replacement", "")).strip()
-        ]
-        replacement_svg = self._wrap_replacements_as_svg(replacements, patch_data)
-        replacement_tokens = self._tokenize_svg_code(replacement_svg)
-        # Code-complement predicts an appended fragment, not a fresh SVG sequence.
-        # Keep EOS as the stop signal, but do not train the model to emit BOS.
-        replacement_tokens = np.append(replacement_tokens, self.token_config.eos_token_id)
+        if self.enable_skeleton_cot:
+            target_tokens = self._build_skeleton_cot_sequence(patch_data)
+        else:
+            replacements = [
+                str(op.get("replacement", "")).strip()
+                for op in patch_data.get("operations", [])
+                if str(op.get("replacement", "")).strip()
+            ]
+            replacement_svg = self._wrap_replacements_as_svg(replacements, patch_data)
+            target_tokens = self._tokenize_svg_code(replacement_svg)
+
+        target_tokens = np.append(target_tokens, self.token_config.eos_token_id)
 
         char, codepoint, font_name = self._parse_uid(uid)
         return {
@@ -540,13 +543,61 @@ class OmniSVGDataset(Dataset):
             "image": image,
             "standard_tokens": partial_svg_tokens,
             "partial_svg_tokens": partial_svg_tokens,
-            "code_complement_tokens": replacement_tokens.tolist(),
+            "code_complement_tokens": target_tokens.tolist(),
             "partial_svg": partial_svg,
             "char": char,
             "codepoint": codepoint,
             "font_name": font_name,
             "uid": uid,
         }
+
+    def _build_skeleton_cot_sequence(self, patch_data: Dict[str, Any]) -> np.ndarray:
+        """Build interleaved skeleton-CoT target: [SKEL_S][skel][SKEL_E][REPL_S][repl][REPL_E]...
+
+        For each operation the model first predicts the skeleton path (reasoning
+        step) and then the replacement path (answer step), bracketed by marker
+        tokens so that inference post-processing can separate them.
+        """
+        skel_start = self.token_config.skeleton_start_token
+        skel_end = self.token_config.skeleton_end_token
+        repl_start = self.token_config.replacement_start_token
+        repl_end = self.token_config.replacement_end_token
+
+        all_tokens: List[int] = []
+        operations = patch_data.get("operations", [])
+
+        for op in operations:
+            replacement = str(op.get("replacement", "")).strip()
+            skeleton = str(op.get("skeleton_svg", "")).strip()
+            if not replacement:
+                continue
+
+            fill = str(op.get("fill", "#000") or "#000")
+
+            if skeleton:
+                skel_svg = self._wrap_single_path_as_svg(skeleton, fill="#000")
+                skel_tokens = self._tokenize_svg_code(skel_svg)
+                if len(skel_tokens) > 0:
+                    all_tokens.append(skel_start)
+                    all_tokens.extend(skel_tokens.tolist())
+                    all_tokens.append(skel_end)
+
+            repl_svg = self._wrap_single_path_as_svg(replacement, fill=fill)
+            repl_tokens = self._tokenize_svg_code(repl_svg)
+            if len(repl_tokens) > 0:
+                all_tokens.append(repl_start)
+                all_tokens.extend(repl_tokens.tolist())
+                all_tokens.append(repl_end)
+
+        return np.array(all_tokens, dtype=np.int64)
+
+    def _wrap_single_path_as_svg(self, d_attr: str, fill: str = "#000") -> str:
+        """Wrap a single path d-attribute string as a minimal SVG document."""
+        return (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">\n'
+            f'  <path fill={quoteattr(fill)} d={quoteattr(d_attr)}/>\n'
+            '</svg>'
+        )
 
     def _find_code_complement_json(self, uid: str) -> Optional[str]:
         """Find the patch JSON for a local code-complement sample."""

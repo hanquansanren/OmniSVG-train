@@ -21,7 +21,7 @@ models:
       color_start_offset: 191946
       color_end_offset: 196044
     model:
-      vocab_size: 197000
+      vocab_size: 197004
     huggingface:
       qwen_model: "/data/phd23_weiguang_zhang/works/svg/qwen25vl3b"
       omnisvg_model: "OmniSVG/OmniSVG1.1_4B"
@@ -62,8 +62,13 @@ model:
   bos_token_id: 196998
   eos_token_id: 196999
   pad_token_id: 151643
+  # Skeleton CoT marker tokens
+  skeleton_start_token_id: 197000
+  skeleton_end_token_id: 197001
+  replacement_start_token_id: 197002
+  replacement_end_token_id: 197003
   # Max generated completion tokens. Override with --max-length if needed.
-  max_length: 1024
+  max_length: 1024 # 1536
 
 text:
   # The code-complement prompt is intentionally short; partial SVG is passed as
@@ -84,12 +89,12 @@ image:
 task_configs:
   code_complement:
     default_temperature: 0.01 # 0.3
-    default_top_p: 1.0 # 0.90
-    default_top_k: 1 # 50
-    default_repetition_penalty: 1.05 # 1.05
+    default_top_p: 0.3 # 0.90
+    default_top_k: 5 # 50
+    default_repetition_penalty: 1.0 # 1.05
 
 generation:
-  default_num_candidates: 1
+  default_num_candidates: 3
   max_num_candidates: 8
   extra_candidates_buffer: 4
 

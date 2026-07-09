@@ -22,6 +22,11 @@ models:
       pad_token_id: 151643
       bos_token_id: 196998
       eos_token_id: 196999
+      # Skeleton chain-of-thought marker tokens (optional, used when skeleton_cot=true)
+      skeleton_start_token_id: 197000
+      skeleton_end_token_id: 197001
+      replacement_start_token_id: 197002
+      replacement_end_token_id: 197003
     
     # SVG token offsets (base_vocab_size + offset)
     svg_tokens:

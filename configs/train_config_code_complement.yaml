@@ -9,7 +9,7 @@ model:
 data:
   target_image_size: 448
   # The prompt contains partial SVG text, so keep more room than text2svg.
-  text_max_length: 1524 # 输入prompt总长度（text+image）
+  text_max_length: 1524 # 输入总长度（prompt + partial_svg 的总预算）
 
   text_source_probabilities:
     detail_description: 0.60
@@ -31,6 +31,8 @@ training:
   task_balance:
     initial_text_only_ratio: 0.0
     code_complement_ratio: 1.0
+    # Enable skeleton chain-of-thought: predict skeleton path before each replacement
+    skeleton_cot: true
 
   loss_weights:
     text_task: 0.0
@@ -40,7 +42,7 @@ training:
 logging:
   log_every: 20
   save_every: 2000
-  val_every: 1000
+  val_every: 2000
 
 dataloader:
   num_workers: 4

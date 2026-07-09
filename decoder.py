@@ -24,6 +24,7 @@ class SketchDecoder(nn.Module):
                  model_path="Qwen/Qwen2.5-VL-3B-Instruct",
                  use_gradient_checkpointing=False,
                  device_map=None,  # 新增参数：允许从外部控制device_map
+                 vocab_size=None,
                  **kwargs):
         super().__init__()
         
@@ -31,7 +32,7 @@ class SketchDecoder(nn.Module):
         self.text_len = text_len
         self.use_gradient_checkpointing = use_gradient_checkpointing
         
-        self.vocab_size = 197000
+        self.vocab_size = vocab_size or 197000
         self.bos_token_id = 196998
         self.eos_token_id = 196999
         self.pad_token_id = 151643
@@ -76,6 +77,48 @@ class SketchDecoder(nn.Module):
                 self.transformer.config.use_cache = False
         
         self.train()
+
+    def load_state_dict_flexible(self, state_dict, strict=False):
+        """Load state_dict with automatic handling of embedding size mismatches.
+
+        When the current model has a larger vocab (e.g. 197004 for skeleton CoT)
+        than the checkpoint (e.g. 197000), the extra embedding rows are left at
+        their randomly initialised values while all existing weights are copied.
+        """
+        model_state = self.state_dict()
+        filtered = {}
+        resized_keys = []
+        for key, ckpt_tensor in state_dict.items():
+            if key in model_state and ckpt_tensor.shape != model_state[key].shape:
+                model_shape = model_state[key].shape
+                ckpt_shape = ckpt_tensor.shape
+                if len(model_shape) == 2 and len(ckpt_shape) == 2 and model_shape[1] == ckpt_shape[1]:
+                    new_tensor = model_state[key].clone()
+                    min_rows = min(model_shape[0], ckpt_shape[0])
+                    new_tensor[:min_rows] = ckpt_tensor[:min_rows]
+                    filtered[key] = new_tensor
+                    resized_keys.append(
+                        f"  {key}: {list(ckpt_shape)} -> {list(model_shape)} "
+                        f"(copied {min_rows}/{model_shape[0]} rows)"
+                    )
+                    continue
+            filtered[key] = ckpt_tensor
+        if resized_keys:
+            print(f"Embedding resize during checkpoint loading:")
+            for msg in resized_keys:
+                print(msg)
+        result = super().load_state_dict(filtered, strict=strict)
+
+        # Re-tie lm_head to embed_tokens when checkpoint omits lm_head.weight
+        # (safetensors with tie_word_embeddings=True only stores one copy).
+        lm_head_key = "transformer.lm_head.weight"
+        embed_key = "transformer.model.embed_tokens.weight"
+        if lm_head_key in result.missing_keys and embed_key not in result.missing_keys:
+            self.transformer.lm_head.weight = self.transformer.model.embed_tokens.weight
+            result.missing_keys.remove(lm_head_key)
+            print("Re-tied lm_head.weight to embed_tokens.weight after checkpoint load.")
+
+        return result
 
     def forward(self, 
                     input_ids=None,

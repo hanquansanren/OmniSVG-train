@@ -99,6 +99,14 @@ MAX_LENGTH = model_config.get('max_length', 1024)
 MIN_MAX_LENGTH = 256
 MAX_MAX_LENGTH = 2048
 
+# Skeleton CoT marker tokens
+SKELETON_START_TOKEN_ID = model_config.get('skeleton_start_token_id', 197000)
+SKELETON_END_TOKEN_ID = model_config.get('skeleton_end_token_id', 197001)
+REPLACEMENT_START_TOKEN_ID = model_config.get('replacement_start_token_id', 197002)
+REPLACEMENT_END_TOKEN_ID = model_config.get('replacement_end_token_id', 197003)
+SKELETON_COT_MARKERS = {SKELETON_START_TOKEN_ID, SKELETON_END_TOKEN_ID,
+                        REPLACEMENT_START_TOKEN_ID, REPLACEMENT_END_TOKEN_ID}
+
 # Task configurations with defaults from config
 task_config = config.get('task_configs', {})
 
@@ -260,6 +268,10 @@ def parse_args():
     parser.add_argument('--tokenization-config', type=str, default='./configs/tokenization.yaml',
                         help='Path to tokenization.yaml (used with --use-train-tokenizer)')
     
+    # Skeleton CoT
+    parser.add_argument('--skeleton-cot', action='store_true', default=False,
+                        help='Enable skeleton CoT mode: strip skeleton tokens and keep only replacement sections')
+    
     # Debug
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='Enable verbose output')
@@ -331,13 +343,18 @@ def load_models(model_size: str, weight_path: str = None, model_path: str = None
 
     # Initialize sketch decoder with model_size
     print("\n[2/3] Initializing SketchDecoder...")
+    infer_vocab_size = (config.get('models', {})
+                        .get(model_size, {})
+                        .get('model', {})
+                        .get('vocab_size', 197000))
     sketch_decoder = SketchDecoder(
         config_path=CONFIG_PATH,
         model_path=model_path,
         model_size=model_size,
         pix_len=MAX_MAX_LENGTH,
         text_len=config.get('text', {}).get('max_length', 200),
-        torch_dtype=DTYPE
+        torch_dtype=DTYPE,
+        vocab_size=infer_vocab_size,
     )
     
     # Load OmniSVG weights
@@ -376,7 +393,7 @@ def load_models(model_size: str, weight_path: str = None, model_path: str = None
         state_dict = load_file(resolved_path)
     else:
         state_dict = torch.load(resolved_path, map_location='cpu')
-    missing, unexpected = sketch_decoder.load_state_dict(state_dict, strict=False)
+    missing, unexpected = sketch_decoder.load_state_dict_flexible(state_dict, strict=False)
     if missing:
         print(f"  Missing keys: {len(missing)} (first 5: {missing[:5]})")
     if unexpected:
@@ -574,8 +591,14 @@ Requirements:
     return inputs
 
 
-def clean_generated_svg_token_ids(token_ids):
-    """Remove sequence-control tokens before SVG token decoding."""
+def clean_generated_svg_token_ids(token_ids, skeleton_cot=False):
+    """Remove sequence-control tokens before SVG token decoding.
+
+    When *skeleton_cot* is True the generated sequence contains interleaved
+    skeleton and replacement sections delimited by marker tokens.  Only the
+    replacement sections are kept for SVG decoding; skeleton sections are
+    discarded (but logged when verbose).
+    """
     ids = list(token_ids)
 
     if ids and ids[0] == BOS_TOKEN_ID:
@@ -584,7 +607,274 @@ def clean_generated_svg_token_ids(token_ids):
     if EOS_TOKEN_ID in ids:
         ids = ids[:ids.index(EOS_TOKEN_ID)]
 
-    return [tok for tok in ids if tok != PAD_TOKEN_ID]
+    ids = [tok for tok in ids if tok != PAD_TOKEN_ID]
+
+    if skeleton_cot:
+        ids = extract_replacement_tokens(ids)
+
+    return ids
+
+
+def extract_replacement_tokens(ids):
+    """Extract only replacement SVG tokens from a skeleton-CoT token sequence.
+
+    The expected layout is:
+        [SKEL_S] ... [SKEL_E] [REPL_S] ... [REPL_E] (repeated)
+
+    Returns the concatenation of all REPL sections (marker tokens removed).
+    If no markers are found the original ids are returned unchanged so that
+    the function degrades gracefully on non-CoT outputs.
+    """
+    has_markers = any(tok in SKELETON_COT_MARKERS for tok in ids)
+    if not has_markers:
+        return ids
+
+    replacement_ids = []
+    in_replacement = False
+    for tok in ids:
+        if tok == REPLACEMENT_START_TOKEN_ID:
+            in_replacement = True
+            continue
+        if tok == REPLACEMENT_END_TOKEN_ID:
+            in_replacement = False
+            continue
+        if tok in SKELETON_COT_MARKERS:
+            in_replacement = False
+            continue
+        if in_replacement:
+            replacement_ids.append(tok)
+
+    return replacement_ids
+
+
+def extract_skeleton_and_replacement_sections(ids):
+    """Split a skeleton-CoT token sequence into (skeleton_sections, replacement_sections).
+
+    Each section is a list of SVG token ids (markers removed).  Useful for
+    visualization / debugging of the CoT reasoning.
+    """
+    skeleton_sections = []
+    replacement_sections = []
+
+    current_section = []
+    current_type = None  # 'skel' or 'repl'
+
+    for tok in ids:
+        if tok == SKELETON_START_TOKEN_ID:
+            current_section = []
+            current_type = 'skel'
+            continue
+        if tok == SKELETON_END_TOKEN_ID:
+            if current_type == 'skel' and current_section:
+                skeleton_sections.append(current_section)
+            current_section = []
+            current_type = None
+            continue
+        if tok == REPLACEMENT_START_TOKEN_ID:
+            current_section = []
+            current_type = 'repl'
+            continue
+        if tok == REPLACEMENT_END_TOKEN_ID:
+            if current_type == 'repl' and current_section:
+                replacement_sections.append(current_section)
+            current_section = []
+            current_type = None
+            continue
+        if current_type is not None:
+            current_section.append(tok)
+
+    return skeleton_sections, replacement_sections
+
+
+# ---------------------------------------------------------------------------
+# Skeleton-CoT visualization helpers
+# ---------------------------------------------------------------------------
+
+def decode_token_ids_to_svg(token_ids, override_fill=None):
+    """Decode a flat list of SVG token IDs into an SVG string and rendered PIL Image.
+
+    Args:
+        token_ids: list[int] of SVG token IDs (without BOS/EOS wrapper).
+        override_fill: if set, replace every path ``fill`` with this CSS colour.
+
+    Returns:
+        (svg_str, pil_image) or (None, None) on failure.
+    """
+    if not token_ids:
+        return None, None
+    try:
+        ids_tensor = torch.tensor([token_ids], dtype=torch.long, device='cpu')
+        wrapped = torch.cat([
+            torch.full((1, 1), BOS_TOKEN_ID, device='cpu'),
+            ids_tensor,
+            torch.full((1, 1), EOS_TOKEN_ID, device='cpu'),
+        ], dim=1)
+
+        generated_xy = svg_tokenizer.process_generated_tokens(wrapped)
+        if len(generated_xy) == 0:
+            return None, None
+
+        svg_tensors, color_tensors = svg_tokenizer.raster_svg(generated_xy)
+        if not svg_tensors or not svg_tensors[0]:
+            return None, None
+
+        num_paths = len(svg_tensors[0])
+        while len(color_tensors) < num_paths:
+            color_tensors.append(BLACK_COLOR_TOKEN)
+
+        svg_obj = svg_tokenizer.apply_colors_to_svg(svg_tensors[0], color_tensors)
+        svg_str = svg_obj.to_str()
+
+        if 'width=' not in svg_str:
+            svg_str = svg_str.replace(
+                '<svg',
+                f'<svg width="{TARGET_IMAGE_SIZE}" height="{TARGET_IMAGE_SIZE}"',
+                1,
+            )
+
+        if override_fill:
+            svg_str = re.sub(r'\s*fill-opacity="[^"]*"', '', svg_str)
+            svg_str = re.sub(r'fill="[^"]*"', f'fill="{override_fill}"', svg_str)
+
+        rendered = render_svg_to_image(svg_str, size=RENDER_SIZE)
+        return svg_str, rendered
+    except Exception:
+        return None, None
+
+
+def _make_overlay_svg(skeleton_svg, replacement_svg,
+                      skel_color="#E74C3C", skel_opacity="0.7"):
+    """Combine skeleton and replacement paths into one overlay SVG.
+
+    Replacement paths are drawn first (bottom layer), then skeleton paths
+    are drawn on top in *skel_color* so they remain clearly visible.
+    """
+    skel_paths = extract_svg_paths(skeleton_svg) if skeleton_svg else []
+    repl_paths = extract_svg_paths(replacement_svg) if replacement_svg else []
+
+    colored_skel = []
+    for p in skel_paths:
+        p = re.sub(r'\s*fill-opacity="[^"]*"', '', p)
+        p = re.sub(r'fill="[^"]*"',
+                   f'fill="{skel_color}" fill-opacity="{skel_opacity}"', p)
+        colored_skel.append(p)
+
+    all_paths = repl_paths + colored_skel
+    if not all_paths:
+        return None
+
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 200 200" width="{RENDER_SIZE}" height="{RENDER_SIZE}">\n'
+        '  ' + '\n  '.join(all_paths) + '\n'
+        '</svg>'
+    )
+
+
+def create_cot_visualization(cot_sections, partial_svg_path=None,
+                             combined_svg=None, cell_size=384):
+    """Build a grid PNG comparing skeleton vs replacement for each CoT section.
+
+    Layout (per row = one section pair):
+        | Skeleton (red) | Replacement | Overlay |
+
+    An extra final row shows partial SVG, all-sections overlay, and the
+    combined result if *partial_svg_path* / *combined_svg* are provided.
+
+    Returns a PIL ``Image`` or ``None`` on failure.
+    """
+    from PIL import ImageDraw
+
+    skel_secs = cot_sections.get('skeleton', [])
+    repl_secs = cot_sections.get('replacement', [])
+    num_pairs = max(len(skel_secs), len(repl_secs))
+    if num_pairs == 0:
+        return None
+
+    skel_images, skel_svgs = [], []
+    for tokens in skel_secs:
+        s, img = decode_token_ids_to_svg(tokens, override_fill="#E74C3C")
+        skel_svgs.append(s)
+        skel_images.append(img)
+
+    repl_images, repl_svgs = [], []
+    for tokens in repl_secs:
+        s, img = decode_token_ids_to_svg(tokens)
+        repl_svgs.append(s)
+        repl_images.append(img)
+
+    overlay_images = []
+    for si in range(num_pairs):
+        s_svg = skel_svgs[si] if si < len(skel_svgs) else None
+        r_svg = repl_svgs[si] if si < len(repl_svgs) else None
+        ov_svg = _make_overlay_svg(s_svg, r_svg)
+        overlay_images.append(
+            render_svg_to_image(ov_svg, size=cell_size) if ov_svg else None
+        )
+
+    # Optional summary row images
+    partial_img = None
+    if partial_svg_path and os.path.exists(partial_svg_path):
+        with open(partial_svg_path, 'r', encoding='utf-8') as f:
+            partial_img = render_svg_to_image(f.read(), size=cell_size)
+
+    combined_img = None
+    if combined_svg:
+        combined_img = render_svg_to_image(combined_svg, size=cell_size)
+
+    has_summary = partial_img or combined_img
+    total_rows = num_pairs + (1 if has_summary else 0)
+
+    ncols = 3
+    pad = 6
+    label_h = 28
+    row_label_w = 36
+    total_w = row_label_w + ncols * cell_size + (ncols + 1) * pad
+    total_h = total_rows * cell_size + (total_rows + 1) * pad + label_h
+
+    viz = Image.new('RGB', (total_w, total_h), (255, 255, 255))
+    draw = ImageDraw.Draw(viz)
+
+    headers = ["Skeleton", "Replacement", "Overlay"]
+    for ci, hdr in enumerate(headers):
+        x = row_label_w + pad + ci * (cell_size + pad) + cell_size // 2
+        draw.text((x, 6), hdr, fill='black', anchor='mt')
+
+    def _paste(img, col, row):
+        x = row_label_w + pad + col * (cell_size + pad)
+        y = label_h + pad + row * (cell_size + pad)
+        if img is not None:
+            viz.paste(img.resize((cell_size, cell_size), Image.Resampling.LANCZOS),
+                      (x, y))
+        else:
+            draw.rectangle([x, y, x + cell_size - 1, y + cell_size - 1],
+                           outline='#CCCCCC')
+
+    for row in range(num_pairs):
+        ry = label_h + pad + row * (cell_size + pad) + cell_size // 2
+        draw.text((4, ry), f"S{row+1}", fill='#555', anchor='lm')
+
+        _paste(skel_images[row] if row < len(skel_images) else None, 0, row)
+        _paste(repl_images[row] if row < len(repl_images) else None, 1, row)
+        _paste(overlay_images[row] if row < len(overlay_images) else None, 2, row)
+
+    if has_summary:
+        srow = num_pairs
+        ry = label_h + pad + srow * (cell_size + pad) + cell_size // 2
+        draw.text((4, ry), "All", fill='#555', anchor='lm')
+
+        _paste(partial_img, 0, srow)
+        _paste(combined_img, 1, srow)
+
+        all_skel_tokens = [t for sec in skel_secs for t in sec]
+        all_repl_tokens = [t for sec in repl_secs for t in sec]
+        all_s_svg, _ = decode_token_ids_to_svg(all_skel_tokens, override_fill="#E74C3C")
+        all_r_svg, _ = decode_token_ids_to_svg(all_repl_tokens)
+        full_ov = _make_overlay_svg(all_s_svg, all_r_svg)
+        full_ov_img = render_svg_to_image(full_ov, size=cell_size) if full_ov else None
+        _paste(full_ov_img, 2, srow)
+
+    return viz
 
 
 def tokenize_partial_svg_file(svg_path, condition_max_length=None):
@@ -788,6 +1078,18 @@ def save_code_complement_results(candidates, partial_svg_path, output_dir, base_
                 combined_img.save(png_path)
                 saved_files.append(png_path)
 
+        if cand.get('cot_sections'):
+            viz_img = create_cot_visualization(
+                cand['cot_sections'],
+                partial_svg_path=partial_svg_path,
+                combined_svg=combined_svg,
+            )
+            if viz_img is not None:
+                viz_path = os.path.join(output_dir,
+                                        f"{base_name}{suffix}_cot_viz.png")
+                viz_img.save(viz_path)
+                saved_files.append(viz_path)
+
     return saved_files
 
 
@@ -834,7 +1136,7 @@ def is_valid_candidate(svg_str, img, subtype="illustration"):
 
 
 def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, repetition_penalty, 
-                       max_length, num_samples, verbose=False):
+                       max_length, num_samples, verbose=False, skeleton_cot=False):
     """Generate candidate SVGs with full parameter control"""
     
     # Get the correct device from the model's embedding layer
@@ -891,7 +1193,17 @@ def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, r
             try:
                 current_ids = generated_ids_batch[i:i+1]
                 raw_ids = current_ids[0].detach().cpu().tolist()
-                cleaned_ids = clean_generated_svg_token_ids(raw_ids)
+                cleaned_ids = clean_generated_svg_token_ids(raw_ids, skeleton_cot=skeleton_cot)
+
+                cot_skel_secs, cot_repl_secs = None, None
+                if skeleton_cot:
+                    _raw_clean = [t for t in raw_ids if t != PAD_TOKEN_ID]
+                    if _raw_clean and _raw_clean[0] == BOS_TOKEN_ID:
+                        _raw_clean = _raw_clean[1:]
+                    if EOS_TOKEN_ID in _raw_clean:
+                        _raw_clean = _raw_clean[:_raw_clean.index(EOS_TOKEN_ID)]
+                    cot_skel_secs, cot_repl_secs = extract_skeleton_and_replacement_sections(_raw_clean)
+
                 if verbose:
                     print(f"  Candidate {i} generated token count: {len(raw_ids)}")
                     print(f"  Candidate {i} first 30 ids: {raw_ids[:30]}")
@@ -911,6 +1223,13 @@ def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, r
                     print(f"  Candidate {i} cleaned token count: {len(cleaned_ids)}")
                     print(f"  Candidate {i} cleaned first 30 ids: {cleaned_ids[:30]}")
                     print(f"  Candidate {i} cleaned last 30 ids: {cleaned_ids[-30:]}")
+                    if cot_skel_secs is not None:
+                        print(f"  Candidate {i} skeleton sections: {len(cot_skel_secs)}, "
+                              f"replacement sections: {len(cot_repl_secs)}")
+                        for si, ss in enumerate(cot_skel_secs):
+                            print(f"    skel[{si}] len={len(ss)} first10={ss[:10]}")
+                        for ri, rs in enumerate(cot_repl_secs):
+                            print(f"    repl[{ri}] len={len(rs)} first10={rs[:10]}")
                 if not cleaned_ids:
                     if verbose:
                         print(f"  Candidate {i} skipped: no SVG tokens after cleanup")
@@ -947,12 +1266,18 @@ def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, r
                 
                 is_valid, reason = is_valid_candidate(svg_str, png_image, subtype)
                 if is_valid:
-                    all_candidates.append({
+                    cand_dict = {
                         'svg': svg_str,
                         'img': png_image,
                         'path_count': num_paths,
-                        'index': len(all_candidates) + 1
-                    })
+                        'index': len(all_candidates) + 1,
+                    }
+                    if cot_skel_secs is not None:
+                        cand_dict['cot_sections'] = {
+                            'skeleton': cot_skel_secs,
+                            'replacement': cot_repl_secs,
+                        }
+                    all_candidates.append(cand_dict)
                     
                     if verbose:
                         print(f"  Found valid candidate {len(all_candidates)} with {num_paths} paths")
@@ -1244,9 +1569,12 @@ def process_code_complement(args):
     top_k = args.top_k if args.top_k is not None else TASK_CONFIGS[task_key].get("default_top_k", 50)
     rep_penalty = args.repetition_penalty if args.repetition_penalty is not None else TASK_CONFIGS[task_key].get("default_repetition_penalty", 1.05)
 
+    use_skeleton_cot = getattr(args, 'skeleton_cot', False)
+
     if args.verbose:
         print(f"Params: temp={temperature}, top_p={top_p}, top_k={top_k}, rep={rep_penalty}")
         print(f"Condition max length: {args.condition_max_length}")
+        print(f"Skeleton CoT: {use_skeleton_cot}")
 
     total_success = 0
     total_failed = 0
@@ -1285,7 +1613,8 @@ def process_code_complement(args):
                 inputs, "code-complement", "image",
                 temperature, top_p, top_k, rep_penalty,
                 args.max_length, args.num_candidates,
-                verbose=args.verbose
+                verbose=args.verbose,
+                skeleton_cot=use_skeleton_cot,
             )
 
             elapsed = time.time() - start_time

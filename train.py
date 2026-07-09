@@ -331,6 +331,7 @@ def load_model(
     
     # Initialize model from base
     # Note: device_map is passed from train() function, will be None for distributed training
+    vocab_size = kwargs.get('vocab_size', None)
     model = SketchDecoder(
         pix_len=pix_len,
         text_len=text_len,
@@ -338,6 +339,7 @@ def load_model(
         attn_implementation=attn_implementation,
         use_gradient_checkpointing=use_gradient_checkpointing,
         device_map=device_map,  # 分布式训练时为None，单GPU时可为"auto"
+        vocab_size=vocab_size,
     )
     
     # Load checkpoint if specified
@@ -383,8 +385,8 @@ def load_model(
                     print(f"Found checkpoint: {model_file}")
                     state_dict = load_checkpoint_state_dict(model_file if os.path.isfile(model_file) else resolved_path)
                     
-                    # Load state dict with detailed logging
-                    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+                    # Load state dict with detailed logging (handles embedding resize)
+                    missing_keys, unexpected_keys = model.load_state_dict_flexible(state_dict, strict=False)
                     
                     print(f"\nCheckpoint loading summary:")
                     print(f"  - Total keys in checkpoint: {len(state_dict)}")
@@ -998,6 +1000,7 @@ def train(args, config: OmniSVGConfig):
         checkpoint_path=args.resume_from_checkpoint if args.resume_from_checkpoint else None,
         use_gradient_checkpointing=config.training.use_gradient_checkpointing,
         device_map=None,  # 关键：分布式训练时必须为None
+        vocab_size=config.tokenization.extended_vocab_size,
     )
     
     # Optimizer
@@ -1774,6 +1777,10 @@ def main():
     logging_group.add_argument("--wandb_project", type=str, default=None,
                               help="Weights & Biases project name (default: omnisvg-training)")
     
+    # Skeleton CoT
+    train_group.add_argument("--skeleton_cot", action="store_true", default=False,
+                            help="Enable skeleton chain-of-thought for code complement (overrides config)")
+    
     # Utility options
     parser.add_argument("--list_datasets", action="store_true",
                        help="List available HuggingFace datasets and exit")
@@ -1816,6 +1823,18 @@ def main():
     elif args.use_flash_attn:
         config.training.use_flash_attn = True
     
+    # CLI --skeleton_cot overrides YAML (only turns on, never turns off)
+    if args.skeleton_cot:
+        config.training.enable_skeleton_cot = True
+
+    # Expand vocab for skeleton CoT marker tokens (must run AFTER CLI overrides)
+    if config.training.enable_skeleton_cot:
+        needed = config.tokenization.replacement_end_token + 1
+        if config.tokenization.extended_vocab_size < needed:
+            print(f"Skeleton CoT enabled: expanding vocab "
+                  f"{config.tokenization.extended_vocab_size} -> {needed}")
+            config.tokenization.extended_vocab_size = needed
+    
     print(f"\n{'='*60}")
     print(f"OmniSVG Training Configuration")
     print(f"{'='*60}")
@@ -1829,6 +1848,8 @@ def main():
     print(f"Max Seq Length:    {config.training.max_seq_length}")
     print(f"Batch Size:        {args.batch_size}")
     print(f"Grad Accum Steps:  {config.training.gradient_accumulation_steps}")
+    print(f"Skeleton CoT:      {config.training.enable_skeleton_cot}")
+    print(f"Vocab Size:        {config.tokenization.extended_vocab_size}")
     print(f"Output Directory:  {args.output_dir}/{args.project_name}")
     if args.resume_from_checkpoint:
         print(f"Resume From:       {args.resume_from_checkpoint}")
