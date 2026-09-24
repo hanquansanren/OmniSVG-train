@@ -22,10 +22,10 @@ fi
 
 # Disable P2P and IB for RTX 4000 series compatibility
 # Set to "true" for RTX 4000 series, "false" for A100/H100
-DISABLE_NCCL_P2P_IB="true" 
+DISABLE_NCCL_P2P_IB="false" 
 
 # Number of GPUs to use
-NUM_GPUS=1
+NUM_GPUS=4
 
 # Batch size per GPU
 BATCH_SIZE=1
