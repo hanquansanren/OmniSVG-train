@@ -102,7 +102,8 @@ TRAIN_CONFIG_FILE="train_config_cc_a100fat_fsdp.yaml"
 
 # Accelerate config file (for DeepSpeed, FSDP, DDP, etc.)
 # Faster FSDP path: shards gradients/optimizer state but avoids FULL_SHARD all-gather overhead.
-ACCELERATE_CONFIG="configs/fsdp_config_speed.yaml"
+ACCELERATE_CONFIG="configs/fsdp_config_stable.yaml"
+# "configs/fsdp_config_speed.yaml"
 # ACCELERATE_CONFIG="configs/ddp_config.yaml"
 # ACCELERATE_CONFIG="configs/fsdp_config_stable.yaml"
 # ACCELERATE_CONFIG="configs/fsdp_config_performance.yaml"
@@ -256,8 +257,8 @@ if [ "$DISABLE_NCCL_P2P_IB" = "true" ]; then
 else
     echo "Enabling NCCL P2P and IB (A100/A6000 mode)"
     # Keep these unset unless you need to override cluster defaults explicitly.
-    # export NCCL_P2P_DISABLE=0
-    # export NCCL_IB_DISABLE=0
+    export NCCL_P2P_DISABLE=0
+    export NCCL_IB_DISABLE=0
 fi
 
 # 不要在 Slurm 任务启动时 pkill train.py/accelerate；这会杀掉同一节点上的其它训练任务。
