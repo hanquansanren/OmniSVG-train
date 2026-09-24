@@ -19,13 +19,15 @@ TASK="code-complement"
 INPUT="./backup/codecomplete_set2"
 # "./backup/examples_zhuan3"
 # "./backup/my_lis2_1_overfit20"
-OUTPUT="./output_cot14k"
-WEIGHT_MODEL="output_stage2/omnisvg_4b_20260708_091120/step_14000"
+OUTPUT="./output_grpo_0923_145101"
+WEIGHT_MODEL="output_grpo/grpo_4b_20260923_145701/step_900/pytorch_model.bin"
 # "output_stage2/omnisvg_4b_20260707_063451/step_18000"
 # "output_stage2/omnisvg_stage2_4b_20260605_232357/step_7500"
 # "output_stage2/omnisvg_stage2_4b_20260605_073945/step_10000"
+# "output_stage2/omnisvg_4b_20260708_091120/step_30000"
 # "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output/omnisvg_4b_20260410_215008/step_7500"
-
+# GRPO
+# output_grpo/grpo_4b_20260923_161714/final/pytorch_model.bin
 
 
 

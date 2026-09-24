@@ -146,5 +146,5 @@ examples/*
 *.md
 *.slurm
 output_image*
-
+wandb
 

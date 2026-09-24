@@ -1,0 +1,80 @@
+# Mask-IoU reward configuration for GRPO (rewards/reward.py::RewardConfig).
+#
+# Pass with:  python train_grpo.py --reward-config configs/grpo_reward.yaml
+# These values are the code defaults; the file exists so weights can be tuned
+# without touching Python.
+#
+# Measured reference points on my_lis2_2 (100 val samples, canvas 256):
+#   ground truth ("oracle")            reward ~ +0.83
+#   empty skeleton + correct contour   reward ~ +0.04   (skeleton_gate applies)
+#   correct skeleton + wrong contour   reward ~ +0.42
+#   correct skeleton + empty contour   reward =  -1.00  (invalid format)
+#   malformed SVG                      reward =  -1.00
+# Check these with:  python train_grpo.py --reward-smoke 100
+
+reward:
+  # --------------------------------------------------------------------------
+  # Rasterization
+  # --------------------------------------------------------------------------
+  # All masks share one canvas and one viewBox, so any two SVGs are comparable.
+  canvas_size: 256
+  # The project renders every SVG in a 200x200 user space
+  # (configs/tokenization.yaml::coordinates.bbox_size).
+  viewbox: [0.0, 0.0, 200.0, 200.0]
+
+  # Skeletons are polylines, so they are stroked rather than filled.  Width is
+  # given in canvas pixels and converted to user units internally.
+  skeleton_stroke_width: 3.0
+  # One-pixel centrelines never overlap exactly; dilate before taking IoU.
+  skeleton_dilate_radius: 2
+
+  # Consistency compares a stroked polyline against a one-pixel medial axis, so
+  # the skeleton is stroked thin here to avoid a pure thickness mismatch.
+  consistency_stroke_width: 1.0
+  consistency_dilate_radius: 3
+  # "iou"      - as specified; oracle lands around 0.45 on this dataset because
+  #              the offline skeleton and the contour medial axis are genuinely
+  #              different curves
+  # "dice"     - same overlap, softer normalisation (oracle ~0.6)
+  # "coverage" - fraction of the contour medial axis the skeleton explains
+  #              (oracle ~0.8, but easier for the policy to game with a large
+  #              scribbled skeleton)
+  consistency_mode: "iou"
+
+  # --------------------------------------------------------------------------
+  # Reward weights
+  #   reward = w_format          * R_format
+  #          + w_skeleton_iou    * R_skeleton_iou
+  #          + w_contour_iou     * R_contour_iou
+  #          + w_consistency_iou * R_consistency_iou
+  #          + w_merge_iou       * R_merge_iou
+  #          - w_overlap_penalty * P_overlap
+  #          - w_area_penalty    * P_area
+  #   reward = skeleton_gate * reward, then clipped to [reward_min, reward_max]
+  # --------------------------------------------------------------------------
+  w_format: 0.10
+  w_skeleton_iou: 0.30
+  w_contour_iou: 0.20
+  w_consistency_iou: 0.30
+  w_merge_iou: 0.10
+  w_overlap_penalty: 0.10
+  w_area_penalty: 0.05
+
+  # --------------------------------------------------------------------------
+  # Gates and clipping
+  # --------------------------------------------------------------------------
+  # Returned when the completion does not parse into both regions.
+  invalid_reward: -1.0
+  # Multiplier applied when the ground-truth skeleton is non-empty but the
+  # prediction's is empty.  This is what stops the policy from skipping the
+  # chain-of-thought and jumping straight to a contour.
+  skeleton_gate: 0.1
+  reward_min: -1.0
+  reward_max: 1.0
+  eps: 1.0e-6
+
+  # --------------------------------------------------------------------------
+  # Token decoding (used when completions arrive as SVG token ids)
+  # --------------------------------------------------------------------------
+  tokenization_config_path: "./configs/tokenization.yaml"
+  model_size: "4B"

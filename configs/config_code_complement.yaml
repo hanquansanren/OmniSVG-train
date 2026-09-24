@@ -1,6 +1,7 @@
 # OmniSVG stage-2 inference config for SVG code-complement.
 # This keeps the 4B token layout aligned with config_zhuan.yaml, while matching
 # the stage-2 training image size and code-complement generation defaults.
+# 推理配置文件
 
 default_model_size: "4B"
 
@@ -68,12 +69,12 @@ model:
   replacement_start_token_id: 197002
   replacement_end_token_id: 197003
   # Max generated completion tokens. Override with --max-length if needed.
-  max_length: 1024 # 1536
+  max_length: 2048 # 1536 模型输出最大预算
 
 text:
   # The code-complement prompt is intentionally short; partial SVG is passed as
   # SVG tokens via --condition-max-length instead of text tokens.
-  max_length: 128
+  max_length: 128 # 模型输入prompt预算
 
 image:
   # Match configs/train_config_code_complement.yaml.
@@ -88,10 +89,10 @@ image:
 
 task_configs:
   code_complement:
-    default_temperature: 0.01 # 0.3
-    default_top_p: 0.3 # 0.90
-    default_top_k: 5 # 50
-    default_repetition_penalty: 1.0 # 1.05
+    default_temperature: 0.01 # 0.3 0.01
+    default_top_p: 0.3 # 0.90 0.3
+    default_top_k: 5 # 50 5
+    default_repetition_penalty: 1.0 # 1.05 1.0
 
 generation:
   default_num_candidates: 3

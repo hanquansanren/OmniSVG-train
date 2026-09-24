@@ -18,3 +18,6 @@ datasets==3.5.0
 jinja2==3.1.0
 tensorboard
 wandb==0.23.0
+# GRPO reward pipeline (rewards/): mask dilation and skeletonization
+scipy==1.11.1
+scikit-image==0.24.0

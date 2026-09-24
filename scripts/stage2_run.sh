@@ -31,7 +31,7 @@ NUM_GPUS=1
 BATCH_SIZE=1
 
 # Maximum SVG sequence length # 输出SVG长度
-MAX_SEQ_LENGTH=1024
+MAX_SEQ_LENGTH=2048
 
 # Stage 2 task switch
 CODE_COMPLEMENT_TASK="true"
