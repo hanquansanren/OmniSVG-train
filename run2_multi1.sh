@@ -38,10 +38,14 @@ MAX_SEQ_LENGTH=2048
 # Stage 2 task switch
 CODE_COMPLEMENT_TASK="true"
 
+# Enable skeleton chain-of-thought: predict skeleton path before each replacement
+SKELETON_COT="true"
+
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
-DATA_DIR="/gpfs/work/int/weiguangzhang21/data/my_lis2_1"
+DATA_DIR="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_lis2_2"
+# "/gpfs/work/int/weiguangzhang21/data/my_lis2_2"
 # "/data/phd23_weiguang_zhang/works/svg/my_lis2_1_overfit20"
 # "/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
 
@@ -56,7 +60,8 @@ PROJECT_NAME="omnisvg_stage2_4b_$(date +%Y%m%d_%H%M%S)"
 #   - "": Start from scratch
 #   - "auto": Download and use official OmniSVG checkpoint
 #   - "/path/to/checkpoint": Resume from specific checkpoint
-RESUME_CHECKPOINT="/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
+RESUME_CHECKPOINT="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
+# "/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
 # "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
 # "output/omnisvg_4b_20260214_205636/step_3000"
 # "output/omnisvg_4b_20260209_021556/step_12000"
@@ -141,6 +146,11 @@ if [ -n "$RESUME_CHECKPOINT" ]; then
     CMD_ARGS+=" --resume_from_checkpoint ${RESUME_CHECKPOINT}"
 fi
 
+# Skeleton CoT
+if [ "$SKELETON_COT" = "true" ]; then
+    CMD_ARGS+=" --skeleton_cot"
+fi
+
 # HuggingFace data
 if [ "$USE_HF_DATA" = "true" ]; then
     CMD_ARGS+=" --use_hf_data --datasets ${HF_DATASETS}"
@@ -177,6 +187,7 @@ echo "Flash Attention:   ${USE_FLASH_ATTN}"
 echo "Disable NCCL P2P:  ${DISABLE_NCCL_P2P_IB}"
 echo "Train Config File: ${TRAIN_CONFIG_FILE}"
 echo "Code Complement:   ${CODE_COMPLEMENT_TASK}"
+echo "Skeleton CoT:      ${SKELETON_COT}"
 echo "Number of GPUs:    ${NUM_GPUS}"
 echo "Batch Size:        ${BATCH_SIZE}"
 if [ -n "$MAX_SEQ_LENGTH" ]; then
