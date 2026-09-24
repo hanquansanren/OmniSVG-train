@@ -44,7 +44,7 @@ SKELETON_COT="true"
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
-DATA_DIR="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_lis2_2"
+DATA_DIR="/gpfs/work/int/weiguangzhang21/data/my_lis2_2"
 # "/gpfs/work/int/weiguangzhang21/data/my_lis2_2"
 # "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_lis2_2"
 # "/data/phd23_weiguang_zhang/works/svg/my_lis2_1_overfit20"
@@ -61,7 +61,8 @@ PROJECT_NAME="omnisvg_stage2_4b_$(date +%Y%m%d_%H%M%S)"
 #   - "": Start from scratch
 #   - "auto": Download and use official OmniSVG checkpoint
 #   - "/path/to/checkpoint": Resume from specific checkpoint
-RESUME_CHECKPOINT="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
+RESUME_CHECKPOINT="/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
+# "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
 # "/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
 # "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
 # "output/omnisvg_4b_20260214_205636/step_3000"
@@ -102,7 +103,7 @@ TRAIN_CONFIG_FILE="train_config_cc_a100fat_fsdp.yaml"
 
 # Accelerate config file (for DeepSpeed, FSDP, DDP, etc.)
 # Faster FSDP path: shards gradients/optimizer state but avoids FULL_SHARD all-gather overhead.
-ACCELERATE_CONFIG="configs/fsdp_config_stable.yaml"
+ACCELERATE_CONFIG="configs/fsdp_config_speed.yaml"
 # "configs/fsdp_config_speed.yaml"
 # ACCELERATE_CONFIG="configs/ddp_config.yaml"
 # ACCELERATE_CONFIG="configs/fsdp_config_stable.yaml"
