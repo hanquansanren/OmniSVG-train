@@ -1003,6 +1003,10 @@ def train(args, config: OmniSVGConfig):
         vocab_size=config.tokenization.extended_vocab_size,
     )
     
+    # FSDP (use_orig_params=False) replaces the original parameters with FlatParameters,
+    # so the optimizer must be built from the wrapped model's parameters.
+    model = accelerator.prepare(model)
+    
     # Optimizer
     lr = config.training.learning_rate * accelerator.num_processes
     optimizer = torch.optim.AdamW(
@@ -1026,8 +1030,8 @@ def train(args, config: OmniSVGConfig):
     accelerator.print(f"Scheduler: {total_steps} total optimizer steps, {config.training.warmup_steps} warmup steps")
     
     # Prepare for distributed training
-    model, optimizer, lr_scheduler, train_dataloader, val_dataloader = accelerator.prepare(
-        model, optimizer, lr_scheduler, train_dataloader, val_dataloader
+    optimizer, lr_scheduler, train_dataloader, val_dataloader = accelerator.prepare(
+        optimizer, lr_scheduler, train_dataloader, val_dataloader
     )
     
     # 如何禁用：设置环境变量 DISABLE_TORCH_COMPILE=1

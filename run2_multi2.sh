@@ -27,7 +27,7 @@ DISABLE_TORCH_COMPILE="true"
 DISABLE_NCCL_P2P_IB="false"
 
 # Number of GPUs to use
-NUM_GPUS=4
+NUM_GPUS=1
 
 # Batch size per GPU
 BATCH_SIZE=1
@@ -44,7 +44,24 @@ SKELETON_COT="true"
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
-DATA_DIR="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_lis2_2"
+DATA_DIR_CANDIDATES=("/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_lis2_2"
+         "/gpfs/work/int/weiguangzhang21/data/my_lis2_2"
+         "/data/phd23_weiguang_zhang/works/svg/my_lis2_2")
+
+if [ -z "${DATA_DIR:-}" ]; then
+  DATA_DIR=""
+  for _p in "${DATA_DIR_CANDIDATES[@]}"; do
+    if [ -e "$_p" ]; then
+      DATA_DIR="$_p"
+      break
+    fi
+  done
+  if [ -z "$DATA_DIR" ]; then
+    echo "Error: 未找到可用的 DATA_DIR，已尝试：" >&2
+    for _p in "${DATA_DIR_CANDIDATES[@]}"; do echo "  - $_p" >&2; done
+    exit 1
+  fi
+fi
 # "/gpfs/work/int/weiguangzhang21/data/my_lis2_2"
 # "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_lis2_2"
 # "/data/phd23_weiguang_zhang/works/svg/my_lis2_1_overfit20"
@@ -61,7 +78,23 @@ PROJECT_NAME="omnisvg_stage2_4b_$(date +%Y%m%d_%H%M%S)"
 #   - "": Start from scratch
 #   - "auto": Download and use official OmniSVG checkpoint
 #   - "/path/to/checkpoint": Resume from specific checkpoint
-RESUME_CHECKPOINT="/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
+RESUME_CHECKPOINT_CANDIDATES=("/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
+         "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
+         "/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin")
+if [ -z "$RESUME_CHECKPOINT" ]; then
+    RESUME_CHECKPOINT=""
+    for _p in "${RESUME_CHECKPOINT_CANDIDATES[@]}"; do
+        if [ -e "$_p" ]; then
+            RESUME_CHECKPOINT="$_p"
+            break
+        fi
+    done
+    if [ -z "$RESUME_CHECKPOINT" ]; then
+        echo "Error: 未找到可用的 RESUME_CHECKPOINT，已尝试：" >&2
+        for _p in "${RESUME_CHECKPOINT_CANDIDATES[@]}"; do echo "  - $_p" >&2; done
+        exit 1
+    fi
+fi
 # "/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
 # "/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
 # "output/omnisvg_4b_20260214_205636/step_3000"
@@ -73,6 +106,12 @@ USE_HF_DATA="false"
 
 # HuggingFace datasets to use (only if USE_HF_DATA="true")
 # Options: "illustration", "icon", or "illustration icon" (both)
+if [ -z "$RESUME_CHECKPOINT" ]; then
+    echo "Error: 未找到可用的 RESUME_CHECKPOINT，已尝试：" >&2
+    for _p in "${RESUME_CHECKPOINT_CANDIDATES[@]}"; do echo "  - $_p" >&2; done
+    exit 1
+fi
+
 HF_DATASETS="illustration icon"
 
 # ==============================================================================
