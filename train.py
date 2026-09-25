@@ -840,7 +840,7 @@ def compute_task_specific_losses(
     batch_size = outputs.logits.size(0)
     device = outputs.logits.device
     
-    logits = outputs.logits[:, :-1].contiguous()
+    logits = outputs.logits[:, :-1].float().contiguous()
     labels = labels[:, 1:].contiguous().to(device)
     
     loss_fct = nn.CrossEntropyLoss(reduction='none', ignore_index=-100)

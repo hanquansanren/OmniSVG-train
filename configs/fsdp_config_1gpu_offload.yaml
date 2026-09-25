@@ -1,0 +1,42 @@
+# FSDP Configuration - single-GPU debug with CPU offload
+#
+# Same wrapping as fsdp_config_stable.yaml, but parameters, gradients and optimizer
+# states live on CPU. mixed_precision must stay 'no': with bf16 mixed precision,
+# Accelerate upcasts FSDP params to fp32 (~64GB for params+grads+AdamW of a 4B
+# model). The model itself is loaded in bf16, so training is still pure bf16.
+# Slow; only for verifying the multi-GPU path.
+
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+
+fsdp_config:
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: Qwen2_5_VLDecoderLayer,Qwen2_5_VLVisionBlock
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_backward_prefetch: BACKWARD_PRE
+  fsdp_forward_prefetch: false
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  fsdp_sync_module_states: false
+  fsdp_cpu_ram_efficient_loading: false
+  fsdp_use_orig_params: false
+  fsdp_offload_params: false
+  fsdp_activation_checkpointing: false
+
+mixed_precision: 'no'
+downcast_bf16: 'no'
+
+num_processes: 4
+gpu_ids: all
+use_cpu: false
+
+num_machines: 1
+machine_rank: 0
+main_process_ip: null
+main_process_port: null
+
+main_training_function: main
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false

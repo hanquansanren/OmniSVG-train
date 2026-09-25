@@ -130,7 +130,12 @@ class SketchDecoder(nn.Module):
                     use_cache=False,
                     **kwargs):
             
-            target_device = self.transformer.device 
+            # With FSDP CPU offload, parameters report "cpu" outside of the unsharded
+            # forward, so trust inputs that the caller already placed on GPU.
+            if input_ids is not None and input_ids.device.type != "cpu":
+                target_device = input_ids.device
+            else:
+                target_device = self.transformer.device
             
             if input_ids is not None:
                 input_ids = input_ids.to(target_device)
