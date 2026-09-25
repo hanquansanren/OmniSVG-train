@@ -141,7 +141,7 @@ TRAIN_CONFIG_FILE="train_config_cc_a100fat_fsdp.yaml"
 
 # Accelerate config file (for DeepSpeed, FSDP, DDP, etc.)
 # Faster FSDP path: shards gradients/optimizer state but avoids FULL_SHARD all-gather overhead.
-ACCELERATE_CONFIG="configs/fsdp_config_stable.yaml"
+ACCELERATE_CONFIG="configs/fsdp_config_speed.yaml"
 # "configs/fsdp_config_speed.yaml"
 # ACCELERATE_CONFIG="configs/ddp_config.yaml"
 # ACCELERATE_CONFIG="configs/fsdp_config_stable.yaml"
