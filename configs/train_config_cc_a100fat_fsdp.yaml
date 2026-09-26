@@ -43,7 +43,7 @@ training:
 
 logging:
   log_every: 20
-  save_every: 2500
+  save_every: 2000
   val_every: 2000
 
 dataloader:
