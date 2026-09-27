@@ -24,10 +24,28 @@ MODEL_SIZE="4B"
 
 # Best SFT checkpoint to initialise the policy from.  This is the checkpoint
 # that inference_run.sh currently points at.
-SFT_CHECKPOINT="${SFT_CHECKPOINT:-output_stage2/omnisvg_4b_20260708_091120/step_14000}"
+SFT_CHECKPOINT="${SFT_CHECKPOINT:-output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors}"
 
 # Stage-2 data directory (needs svg/, png/, json/, train_meta.csv, val_meta.csv)
-DATA_DIR="${DATA_DIR:-/data/phd23_weiguang_zhang/works/svg/my_lis2_2}"
+# DATA_DIR="${DATA_DIR:-/data/phd23_weiguang_zhang/works/svg/my_lis2_2}"
+DATA_DIR_CANDIDATES=("/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_lis2_2"
+         "/gpfs/work/int/weiguangzhang21/data/my_lis2_2"
+         "/data/phd23_weiguang_zhang/works/svg/my_lis2_2")
+
+if [ -z "${DATA_DIR:-}" ]; then
+  DATA_DIR=""
+  for _p in "${DATA_DIR_CANDIDATES[@]}"; do
+    if [ -e "$_p" ]; then
+      DATA_DIR="$_p"
+      break
+    fi
+  done
+  if [ -z "$DATA_DIR" ]; then
+    echo "Error: 未找到可用的 DATA_DIR，已尝试：" >&2
+    for _p in "${DATA_DIR_CANDIDATES[@]}"; do echo "  - $_p" >&2; done
+    exit 1
+  fi
+fi
 
 # Output directory for checkpoints, metrics and completion dumps
 OUTPUT_DIR="${OUTPUT_DIR:-./output_grpo}"
@@ -43,7 +61,7 @@ NUM_GENERATIONS="${NUM_GENERATIONS:-8}"
 PROMPTS_PER_STEP="${PROMPTS_PER_STEP:-1}"
 
 # 5e-7 to 1e-6; GRPO on a converged SFT policy needs a much smaller step than SFT
-LEARNING_RATE="${LEARNING_RATE:-5e-6}"
+LEARNING_RATE="${LEARNING_RATE:-2e-6}"
 
 # KL coefficient against the SFT reference; 0.01-0.05
 BETA="${BETA:-0.02}"
@@ -63,7 +81,7 @@ MAX_STEPS="${MAX_STEPS:-1000}"
 
 # Only fine-tune the top N decoder layers (0 = every layer).  Keeps the vision
 # tower and lower layers frozen, which is what makes this fit on one card.
-TRAIN_LAST_LAYERS="${TRAIN_LAST_LAYERS:-8}"
+TRAIN_LAST_LAYERS="${TRAIN_LAST_LAYERS:-16}"
 
 # Reference policy for the KL term: "swap" (cheap and exact), "full", "none"
 REF_MODE="${REF_MODE:-swap}"
@@ -111,6 +129,10 @@ PROBE_TEMPERATURES="${PROBE_TEMPERATURES:-0.1,0.3,0.5,0.7,0.9}"
 # Flash attention (set to "false" on GPUs without support)
 USE_FLASH_ATTN="${USE_FLASH_ATTN:-true}"
 
+# Gradient checkpointing for the policy forward.  "false" trades memory for
+# ~20-30% faster backward; fine on 80 GB cards, tight on a 48 GB A6000.
+GRADIENT_CHECKPOINTING="${GRADIENT_CHECKPOINTING:-true}"
+
 # Data-parallel GPUs.  Above 1 the run goes through torchrun and every GPU
 # samples its own prompts, so one optimizer step covers
 # NUM_GPUS * PROMPTS_PER_STEP groups.  Diagnostics always run on one GPU.
@@ -151,6 +173,10 @@ CMD_ARGS+=" --canvas-size ${CANVAS_SIZE}"
 
 if [ "$USE_FLASH_ATTN" != "true" ]; then
     CMD_ARGS+=" --no-flash-attn"
+fi
+
+if [ "$GRADIENT_CHECKPOINTING" != "true" ]; then
+    CMD_ARGS+=" --no-gradient-checkpointing"
 fi
 
 if [ "$USE_WANDB" = "true" ]; then

@@ -27,7 +27,7 @@ DISABLE_TORCH_COMPILE="true"
 DISABLE_NCCL_P2P_IB="false"
 
 # Number of GPUs to use
-NUM_GPUS=1
+NUM_GPUS=4
 
 # Batch size per GPU
 BATCH_SIZE=1
@@ -141,7 +141,7 @@ TRAIN_CONFIG_FILE="train_config_cc_a100fat_fsdp.yaml"
 
 # Accelerate config file (for DeepSpeed, FSDP, DDP, etc.)
 # Faster FSDP path: shards gradients/optimizer state but avoids FULL_SHARD all-gather overhead.
-ACCELERATE_CONFIG="configs/fsdp_config_1gpu_offload.yaml"
+ACCELERATE_CONFIG="configs/fsdp_config_speed.yaml"
 # 单卡 A6000 调试用 CPU offload；多卡时改回 "configs/fsdp_config_speed.yaml"
 # ACCELERATE_CONFIG="configs/fsdp_config_1gpu_offload.yaml"
 # ACCELERATE_CONFIG="configs/ddp_config.yaml"
@@ -154,7 +154,7 @@ ACCELERATE_CONFIG="configs/fsdp_config_1gpu_offload.yaml"
 # Mixed precision training
 # "no": 模型本身以 bf16 加载，参数/梯度/AdamW 状态全部保持 bf16（与单卡 stage2_run.sh 等效）。
 # "bf16": FSDP 下 accelerate 会把参数升为 fp32 主权重，显存约翻倍，但数值更稳。
-MIXED_PRECISION="no"
+MIXED_PRECISION="bf16"
 
 # ==============================================================================
 # Derived Settings (do not modify)
