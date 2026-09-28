@@ -24,7 +24,8 @@ MODEL_SIZE="4B"
 
 # Best SFT checkpoint to initialise the policy from.  This is the checkpoint
 # that inference_run.sh currently points at.
-SFT_CHECKPOINT="${SFT_CHECKPOINT:-output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors}"
+SFT_CHECKPOINT="${SFT_CHECKPOINT:-/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output_stage2/model.safetensors}" 
+# "${SFT_CHECKPOINT:-output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors}"
 
 # Stage-2 data directory (needs svg/, png/, json/, train_meta.csv, val_meta.csv)
 # DATA_DIR="${DATA_DIR:-/data/phd23_weiguang_zhang/works/svg/my_lis2_2}"
@@ -61,7 +62,7 @@ NUM_GENERATIONS="${NUM_GENERATIONS:-8}"
 PROMPTS_PER_STEP="${PROMPTS_PER_STEP:-1}"
 
 # 5e-7 to 1e-6; GRPO on a converged SFT policy needs a much smaller step than SFT
-LEARNING_RATE="${LEARNING_RATE:-2e-6}"
+LEARNING_RATE="${LEARNING_RATE:-5e-6}"
 
 # KL coefficient against the SFT reference; 0.01-0.05
 BETA="${BETA:-0.02}"
@@ -81,7 +82,7 @@ MAX_STEPS="${MAX_STEPS:-1000}"
 
 # Only fine-tune the top N decoder layers (0 = every layer).  Keeps the vision
 # tower and lower layers frozen, which is what makes this fit on one card.
-TRAIN_LAST_LAYERS="${TRAIN_LAST_LAYERS:-16}"
+TRAIN_LAST_LAYERS="${TRAIN_LAST_LAYERS:-8}"
 
 # Reference policy for the KL term: "swap" (cheap and exact), "full", "none"
 REF_MODE="${REF_MODE:-swap}"
