@@ -768,6 +768,51 @@ def generate_group(
     return [tokens for tokens, _ in trimmed], [finished for _, finished in trimmed]
 
 
+def build_completion_position_ids(
+    model: Any,
+    prompt: Dict[str, Any],
+    prompt_ids: Any,
+    completion: Any,
+    device: Any,
+) -> Any:
+    """RoPE indices for prompt + completion, matching ``generate()`` prefill+decode.
+
+    ``generate()`` only runs ``get_rope_index`` on the prompt, then appends
+    sequential text positions for new tokens.  Re-running ``get_rope_index`` on
+    the full concatenated sequence mis-parses SVG tokens that collide with
+    Qwen vision specials (e.g. 151655) as extra image blocks and can index OOB.
+    """
+    import torch
+
+    prompt_mask = prompt["attention_mask"].to(device)
+    image_grid_thw = prompt.get("image_grid_thw")
+    if image_grid_thw is not None:
+        image_grid_thw = image_grid_thw.to(device)
+
+    model.transformer.rope_deltas = None
+    prompt_position_ids, _ = model.transformer.get_rope_index(
+        input_ids=prompt_ids,
+        attention_mask=prompt_mask,
+        image_grid_thw=image_grid_thw,
+    )
+    comp_len = completion.shape[1]
+    if comp_len == 0:
+        return prompt_position_ids * prompt_mask[None, :]
+
+    prompt_len = prompt_ids.shape[1]
+    last_pos = int(prompt_position_ids[0, 0, prompt_len - 1].item())
+    comp_positions = torch.arange(
+        last_pos + 1,
+        last_pos + 1 + comp_len,
+        device=device,
+        dtype=prompt_ids.dtype,
+    )
+    comp_position_ids = comp_positions.view(1, 1, -1).expand(3, 1, -1)
+    position_ids = torch.cat([prompt_position_ids, comp_position_ids], dim=2)
+    attention_mask = torch.cat([prompt_mask, torch.ones_like(completion)], dim=1)
+    return position_ids * attention_mask[None, :]
+
+
 def completion_logprobs(
     model: Any,
     prompt: Dict[str, Any],
@@ -777,9 +822,8 @@ def completion_logprobs(
 ):
     """Per-token log-probabilities of ``completion_ids`` under ``model``.
 
-    Runs one sequence at a time: ``SketchDecoder.forward`` derives RoPE indices
-    from the attention mask, and left-padding a group would shift the image
-    token positions.
+    Runs one sequence at a time.  RoPE is computed on the prompt only and then
+    extended linearly over the completion, mirroring ``generate()``.
     """
     import torch
 
@@ -789,10 +833,14 @@ def completion_logprobs(
     attention_mask = torch.cat(
         [prompt["attention_mask"].to(device), torch.ones_like(completion)], dim=1
     )
+    position_ids = build_completion_position_ids(
+        model, prompt, prompt_ids, completion, device
+    )
 
     forward_kwargs: Dict[str, Any] = {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
+        "position_ids": position_ids,
         "use_cache": False,
     }
     if prompt.get("pixel_values") is not None:
@@ -1178,9 +1226,20 @@ def run_training(args: argparse.Namespace, reward_config: RewardConfig) -> int:
                     for index, completion in enumerate(completions):
                         if not completion:
                             continue
-                        reference_logprobs[index] = completion_logprobs(
-                            ref_model, prompt, completion, device, with_grad=False
-                        ).detach()
+                        try:
+                            reference_logprobs[index] = completion_logprobs(
+                                ref_model, prompt, completion, device, with_grad=False
+                            ).detach()
+                        except RuntimeError as exc:
+                            if "CUDA error" not in str(exc):
+                                raise
+                            logger.warning(
+                                "reference forward failed for %s (len=%d): %s; "
+                                "skipping completion",
+                                sample["uid"], len(completion), exc,
+                            )
+                            torch.cuda.empty_cache()
+                            continue
 
             total_groups += 1
             for index, completion in enumerate(completions):

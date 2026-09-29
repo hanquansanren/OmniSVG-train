@@ -120,7 +120,7 @@ class SketchDecoder(nn.Module):
 
         return result
 
-    def forward(self, 
+    def forward(self,
                     input_ids=None,
                     attention_mask=None,
                     pixel_values=None,
@@ -128,6 +128,7 @@ class SketchDecoder(nn.Module):
                     labels=None,
                     past_key_values=None,
                     use_cache=False,
+                    position_ids=None,
                     **kwargs):
             
             # With FSDP CPU offload, parameters report "cpu" outside of the unsharded
@@ -150,12 +151,13 @@ class SketchDecoder(nn.Module):
             if labels is not None:
                 labels = labels.to(target_device)
             
-            self.transformer.rope_deltas = None
-            position_ids, _ = self.transformer.get_rope_index(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                image_grid_thw=image_grid_thw
-            )
+            if position_ids is None:
+                self.transformer.rope_deltas = None
+                position_ids, _ = self.transformer.get_rope_index(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    image_grid_thw=image_grid_thw,
+                )
             position_ids = position_ids * attention_mask[None, ]
 
             outputs = self.transformer(
