@@ -24,7 +24,8 @@ MODEL_SIZE="4B"
 
 # Best SFT checkpoint to initialise the policy from.  This is the checkpoint
 # that inference_run.sh currently points at.
-SFT_CHECKPOINT="${SFT_CHECKPOINT:-output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors}"
+SFT_CHECKPOINT="${SFT_CHECKPOINT:-output_grpo/20260928_022117_5000/model.safetensors}"
+# "${SFT_CHECKPOINT:-output_grpo/20260928_022117_5000/model.safetensors}"
 # "${SFT_CHECKPOINT:-output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors}"
 # "${SFT_CHECKPOINT:-/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output_stage2/model.safetensors}"
 
@@ -63,7 +64,7 @@ NUM_GENERATIONS="${NUM_GENERATIONS:-8}"
 PROMPTS_PER_STEP="${PROMPTS_PER_STEP:-1}"
 
 # 5e-7 to 1e-6; GRPO on a converged SFT policy needs a much smaller step than SFT
-LEARNING_RATE="${LEARNING_RATE:-1e-5}"
+LEARNING_RATE="${LEARNING_RATE:-5e-6}"
 
 # KL coefficient against the SFT reference; 0.01-0.05
 BETA="${BETA:-0.02}"
