@@ -147,4 +147,5 @@ examples/*
 *.slurm
 output_image*
 wandb
+eval/*
 
