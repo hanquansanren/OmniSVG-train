@@ -80,7 +80,9 @@ PROJECT_NAME="omnisvg_stage2_4b_$(date +%Y%m%d_%H%M%S)"
 #   - "/path/to/checkpoint": Resume from specific checkpoint
 RESUME_CHECKPOINT_CANDIDATES=("/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
          "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
-         "/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin")
+         "output/omnisvg_4b_20260506_231738/step_10000/model.safetensors")
+         # "/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
+         # "output/omnisvg_4b_20260506_231738/step_10000/model.safetensors"
 if [ -z "$RESUME_CHECKPOINT" ]; then
     RESUME_CHECKPOINT=""
     for _p in "${RESUME_CHECKPOINT_CANDIDATES[@]}"; do

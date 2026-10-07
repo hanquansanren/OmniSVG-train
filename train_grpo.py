@@ -1031,9 +1031,12 @@ def run_training(args: argparse.Namespace, reward_config: RewardConfig) -> int:
     np.random.seed(args.seed + dist.rank)
     torch.manual_seed(args.seed + dist.rank)
 
-    project_name = dist.broadcast_object(
-        args.project_name or f"grpo_{args.model_size.lower()}_{time.strftime('%Y%m%d_%H%M%S')}"
-    )
+    # Jobs submitted together start within the same second, so the timestamp
+    # alone is not unique; the SLURM job id keeps their run directories apart.
+    default_name = f"grpo_{args.model_size.lower()}_{time.strftime('%Y%m%d_%H%M%S')}"
+    if os.environ.get("SLURM_JOB_ID"):
+        default_name += f"_j{os.environ['SLURM_JOB_ID']}"
+    project_name = dist.broadcast_object(args.project_name or default_name)
     run_dir = os.path.join(args.output_dir, project_name)
     if dist.is_main:
         os.makedirs(run_dir, exist_ok=True)

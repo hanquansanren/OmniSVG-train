@@ -95,7 +95,7 @@ task_configs:
     default_repetition_penalty: 1.01 # 1.05 1.0
 
 generation:
-  default_num_candidates: 3
+  default_num_candidates: 1
   max_num_candidates: 8
   extra_candidates_buffer: 4
 

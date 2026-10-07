@@ -6,7 +6,7 @@ model:
   torch_dtype: "bfloat16"
   # Use HuggingFace/model-level checkpointing to reduce activation memory.
   # Keep fsdp_activation_checkpointing=false in the FSDP config to avoid double checkpointing.
-  use_gradient_checkpointing: true
+  use_gradient_checkpointing: false
 
 data:
   target_image_size: 448
@@ -22,7 +22,7 @@ training:
   weight_decay: 0.1
   max_grad_norm: 1.0
 
-  epochs: 2
+  epochs: 3
   gradient_accumulation_steps: 4
 
   scheduler:

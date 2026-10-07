@@ -1,7 +1,9 @@
 #!/bin/bash
-#SBATCH --job-name=omnisvg_eval
-#SBATCH --gpus=1
-#SBATCH --cpus-per-task=16
+#SBATCH --job-name=svg_eval
+#SBATCH --partition=gpu40901t
+#SBATCH -N 1
+#SBATCH --qos=16gpus
+#SBATCH -G 1
 #SBATCH --output=logs/eval_%j.out
 # OmniSVG 测试集推理 + 指标评测（SSIM / LPIPS / MSE）
 #   任务1 img2svg：        ./eval/eval_task1   (my_zhuan4 验证集抽样)
@@ -30,25 +32,33 @@ if [ ! -f ./inference.py ] || [ ! -f ./metrics/eval_svg_tasks.py ]; then
 fi
 
 # 可选：激活 conda 环境（为空则使用当前环境）
-CONDA_ENV="${CONDA_ENV:-}"
-if [ -n "$CONDA_ENV" ]; then
-  source "$(conda info --base)/etc/profile.d/conda.sh"
-  conda activate "$CONDA_ENV"
-fi
+module load anaconda3
+source activate svg2
+# CONDA_ENV="${CONDA_ENV:-}"
+# if [ -n "$CONDA_ENV" ]; then
+#   source "$(conda info --base)/etc/profile.d/conda.sh"
+#   conda activate "$CONDA_ENV"
+# fi
 
 PYTHON="${PYTHON:-python}"
 # 评测需要 cairosvg / scikit-image / lpips；若与推理环境不同可单独指定
 EVAL_PYTHON="${EVAL_PYTHON:-$PYTHON}"
 
 # 要运行的任务：img2svg / complete，空格分隔
-TASKS="${TASKS:-img2svg complete}"
+TASKS="${TASKS:-complete}"
 # all = 推理 + 评测；infer = 只推理；eval = 只评测（复用已有推理结果）
 STAGE="${STAGE:-all}"
 
 TEST_DIR_IMG2SVG="${TEST_DIR_IMG2SVG:-./eval/eval_task1}"
 TEST_DIR_COMPLETE="${TEST_DIR_COMPLETE:-./eval/eval_task2}"
 
-WEIGHT_MODEL="${WEIGHT_MODEL:-output_grpo/grpo_4b_20260928_223915/step_800/pytorch_model.bin}"
+WEIGHT_MODEL="${WEIGHT_MODEL:-output_grpo/20260928_022117_5000/model.safetensors}"
+# output_grpo/20260928_022117_5000/model.safetensors
+# output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors
+# output_grpo/grpo_4b_20260930_224442/step_300/pytorch_model.bin
+# output_grpo/grpo_4b_20260930_230539/step_300/pytorch_model.bin
+# output_grpo/grpo_4b_20260930_232159/step_300/pytorch_model.bin
+# output_grpo/grpo_4b_20261001_002150/step_300/pytorch_model.bin
 # img2svg 与 complete 使用不同权重时分别指定，默认都用 WEIGHT_MODEL
 WEIGHT_IMG2SVG="${WEIGHT_IMG2SVG:-$WEIGHT_MODEL}"
 WEIGHT_COMPLETE="${WEIGHT_COMPLETE:-$WEIGHT_MODEL}"
