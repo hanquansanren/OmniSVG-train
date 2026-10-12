@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --output=logs/eval_%j.out
 # OmniSVG 测试集推理 + 指标评测（SSIM / LPIPS / MSE）
-#   任务1 img2svg：        ./eval/eval_task1   (my_zhuan4 验证集抽样)
+#   任务1 img2svg：        ./eval/eval_task1_1 (stage1_old2old 验证集抽样；eval_task1_2 为 old2new，PNG 相同)
 #   任务2 code-complement：./eval/eval_task2   (my_lis2_2 验证集抽样)
 #
 # 用法（在仓库根目录下）:
@@ -45,7 +45,7 @@ TASKS="${TASKS:-img2svg complete}"
 # all = 推理 + 评测；infer = 只推理；eval = 只评测（复用已有推理结果）
 STAGE="${STAGE:-all}"
 
-TEST_DIR_IMG2SVG="${TEST_DIR_IMG2SVG:-./eval/eval_task1}"
+TEST_DIR_IMG2SVG="${TEST_DIR_IMG2SVG:-./eval/eval_task1_1}"
 TEST_DIR_COMPLETE="${TEST_DIR_COMPLETE:-./eval/eval_task2}"
 
 WEIGHT_MODEL="${WEIGHT_MODEL:-output_grpo/grpo_4b_20260928_223915/step_800/pytorch_model.bin}"
