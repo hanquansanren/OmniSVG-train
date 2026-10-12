@@ -24,7 +24,7 @@ MODEL_SIZE="4B"
 
 # Best SFT checkpoint to initialise the policy from.  This is the checkpoint
 # that inference_run.sh currently points at.
-SFT_CHECKPOINT="${SFT_CHECKPOINT:-output_grpo/20260928_022117_5000/model.safetensors}"
+SFT_CHECKPOINT="${SFT_CHECKPOINT:-output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors}"
 # "${SFT_CHECKPOINT:-output_grpo/20260928_022117_5000/model.safetensors}"
 # "${SFT_CHECKPOINT:-output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors}"
 # "${SFT_CHECKPOINT:-/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output_stage2/model.safetensors}"
@@ -184,6 +184,10 @@ fi
 
 if [ "$USE_WANDB" = "true" ]; then
     CMD_ARGS+=" --use-wandb --wandb-project ${WANDB_PROJECT}"
+fi
+
+if [ -n "${PROJECT_NAME:-}" ]; then
+    CMD_ARGS+=" --project-name ${PROJECT_NAME}"
 fi
 
 if [ -n "$REWARD_CONFIG" ]; then

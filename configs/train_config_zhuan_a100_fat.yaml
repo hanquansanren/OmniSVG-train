@@ -17,8 +17,6 @@ model:
 # Data Configuration  
 # ==============================================================================
 data:
-  data_dir: "/gpfs/work/int/weiguangzhang21/data/my_l11"
-  
   # A100可以用更大的图像尺寸
   target_image_size: 448
   

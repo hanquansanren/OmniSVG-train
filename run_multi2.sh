@@ -4,6 +4,10 @@
 
 set -e
 
+_RUN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/resolve_train_config.sh
+source "${_RUN_ROOT}/scripts/lib/resolve_train_config.sh"
+
 # ==============================================================================
 # Configuration - MODIFY THESE SETTINGS
 # ==============================================================================
@@ -88,13 +92,16 @@ WANDB_PROJECT="omnisvg-training"
 # Config directory
 CONFIG_DIR="./configs"
 
-# Training config file name
-# Options: 
+# Training config file name (relative to CONFIG_DIR).
+# Submit: bash scripts/submit_run1_multi2.sh configs/your.yaml
+# Queued job fix: configs/job_bindings/by_job/<SLURM_JOB_ID>.yaml
+# Options:
 #   - "train_config.yaml" (standard configuration)
 #   - "train_config_zhuan.yaml" (原始配置)
 #   - "train_config_zhuan_fast.yaml" (⭐ A100性能优化版本)
 #   - "train_config_low_memory.yaml" (optimized for low VRAM)
-TRAIN_CONFIG_FILE="train_config_zhuan_a100_fat2.yaml"
+_DEFAULT_TRAIN_CONFIG="train_config_zhuan_a100_fat2.yaml"
+resolve_train_config "${_DEFAULT_TRAIN_CONFIG}"
 
 # Accelerate config file (for DeepSpeed, FSDP, etc.)
 # Leave empty for default settings 多卡训练时需要配置
@@ -183,6 +190,7 @@ echo "Model Size:        ${MODEL_SIZE}"
 echo "Flash Attention:   ${USE_FLASH_ATTN}"
 echo "Disable NCCL P2P:  ${DISABLE_NCCL_P2P_IB}"
 echo "Train Config File: ${TRAIN_CONFIG_FILE}"
+print_bound_train_config
 echo "Number of GPUs:    ${NUM_GPUS}"
 echo "Batch Size:        ${BATCH_SIZE}"
 if [ -n "$MAX_SEQ_LENGTH" ]; then

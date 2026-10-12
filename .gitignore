@@ -33,6 +33,7 @@ out/
 
 *.log
 logs/
+logs_*/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -148,4 +149,5 @@ examples/*
 output_image*
 wandb
 eval/*
-
+eval_results/*
+configs/job_bindings
