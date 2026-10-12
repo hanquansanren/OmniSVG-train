@@ -4,6 +4,10 @@
 
 set -e
 
+_RUN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/resolve_train_config.sh
+source "${_RUN_ROOT}/scripts/lib/resolve_train_config.sh"
+
 # ==============================================================================
 # Configuration - MODIFY THESE SETTINGS
 # ==============================================================================
@@ -39,12 +43,28 @@ NUM_GPUS=4
 BATCH_SIZE=1
 
 # Maximum SVG sequence length
-MAX_SEQ_LENGTH=8192
+MAX_SEQ_LENGTH=8192 # 2048
 
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
-DATA_DIR="/gpfs/work/int/weiguangzhang21/data/my_l11"
+DATA_DIR_CANDIDATES=("/gpfs/work/int/linhuadong23/data/noisy_stage3/FZCaoQBLSJW/stage1_old2old"
+                     "/gpfs/work/int/weiguangzhang21/data/my_l11")
+
+if [ -z "${DATA_DIR:-}" ]; then
+  DATA_DIR=""
+  for _p in "${DATA_DIR_CANDIDATES[@]}"; do
+    if [ -e "$_p" ]; then
+      DATA_DIR="$_p"
+      break
+    fi
+  done
+  if [ -z "$DATA_DIR" ]; then
+    echo "Error: 未找到可用的 DATA_DIR，已尝试：" >&2
+    for _p in "${DATA_DIR_CANDIDATES[@]}"; do echo "  - $_p" >&2; done
+    exit 1
+  fi
+fi
 
 # Output directory for checkpoints and logs
 OUTPUT_DIR="./output"
@@ -57,7 +77,22 @@ PROJECT_NAME="omnisvg_4b_$(date +%Y%m%d_%H%M%S)"
 #   - "": Start from scratch
 #   - "auto": Download and use official OmniSVG checkpoint
 #   - "/path/to/checkpoint": Resume from specific checkpoint
-RESUME_CHECKPOINT="/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
+RESUME_CHECKPOINT_CANDIDATES=("/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
+                              "/gpfs/work/int/linhuadong23/weights/pytorch_model.bin")
+if [ -z "$RESUME_CHECKPOINT" ]; then
+    RESUME_CHECKPOINT=""
+    for _p in "${RESUME_CHECKPOINT_CANDIDATES[@]}"; do
+        if [ -e "$_p" ]; then
+            RESUME_CHECKPOINT="$_p"
+            break
+        fi
+    done
+    if [ -z "$RESUME_CHECKPOINT" ]; then
+        echo "Error: 未找到可用的 RESUME_CHECKPOINT，已尝试：" >&2
+        for _p in "${RESUME_CHECKPOINT_CANDIDATES[@]}"; do echo "  - $_p" >&2; done
+        exit 1
+    fi
+fi
 # "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
 # "output/omnisvg_4b_20260214_205636/step_3000"
 # "output/omnisvg_4b_20260209_021556/step_12000"
@@ -88,20 +123,23 @@ WANDB_PROJECT="omnisvg-training"
 # Config directory
 CONFIG_DIR="./configs"
 
-# Training config file name
-# Options: 
+# Training config file name (relative to CONFIG_DIR).
+# Submit: bash scripts/submit_run1_multi1.sh configs/your.yaml
+# Queued job fix: configs/job_bindings/by_job/<SLURM_JOB_ID>.yaml
+# Options:
 #   - "train_config.yaml" (standard configuration)
 #   - "train_config_zhuan.yaml" (原始配置)
 #   - "train_config_zhuan_fast.yaml" (⭐ A100性能优化版本)
 #   - "train_config_low_memory.yaml" (optimized for low VRAM)
-TRAIN_CONFIG_FILE="train_config_zhuan_a100_fat.yaml"
+_DEFAULT_TRAIN_CONFIG="train_config_zhuan_a100_fat.yaml"
+resolve_train_config "${_DEFAULT_TRAIN_CONFIG}"
 
 # Accelerate config file (for DeepSpeed, FSDP, etc.)
 # Leave empty for default settings 多卡训练时需要配置
 # ACCELERATE_CONFIG="configs/zero_stage2.yaml"         # DeepSpeed ZeRO Stage 2 (与PyTorch 2.5.0不兼容)
 # ACCELERATE_CONFIG="configs/fsdp_config.yaml"         # FSDP SIZE_BASED (与PyTorch 2.5.0的DTensor有冲突)
 
-ACCELERATE_CONFIG="configs/fsdp_config_performance.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
+ACCELERATE_CONFIG="configs/fsdp_config_speed.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
 # ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
 # ACCELERATE_CONFIG="configs/fsdp_config_minimal.yaml"  # FSDP 最简化配置（用于排查CUDA错误）
 # ACCELERATE_CONFIG="configs/fsdp_config_transformer.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
@@ -183,6 +221,7 @@ echo "Model Size:        ${MODEL_SIZE}"
 echo "Flash Attention:   ${USE_FLASH_ATTN}"
 echo "Disable NCCL P2P:  ${DISABLE_NCCL_P2P_IB}"
 echo "Train Config File: ${TRAIN_CONFIG_FILE}"
+print_bound_train_config
 echo "Number of GPUs:    ${NUM_GPUS}"
 echo "Batch Size:        ${BATCH_SIZE}"
 if [ -n "$MAX_SEQ_LENGTH" ]; then

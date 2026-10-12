@@ -4,6 +4,10 @@
 
 set -e
 
+_RUN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/resolve_train_config.sh
+source "${_RUN_ROOT}/scripts/lib/resolve_train_config.sh"
+
 # ==============================================================================
 # Configuration - MODIFY THESE SETTINGS
 # ==============================================================================
@@ -27,7 +31,7 @@ DISABLE_TORCH_COMPILE="true"
 DISABLE_NCCL_P2P_IB="false"
 
 # Number of GPUs to use
-NUM_GPUS=4
+NUM_GPUS=2
 
 # Batch size per GPU
 BATCH_SIZE=1
@@ -45,6 +49,7 @@ SKELETON_COT="true"
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
 DATA_DIR_CANDIDATES=("/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_lis2_2"
+         "/gpfs/work/int/weiguangzhang21/data/stage2/FZCaoQBLSJW"
          "/gpfs/work/int/weiguangzhang21/data/my_lis2_2"
          "/data/phd23_weiguang_zhang/works/svg/my_lis2_2")
 
@@ -80,7 +85,7 @@ PROJECT_NAME="omnisvg_stage2_4b_$(date +%Y%m%d_%H%M%S)"
 #   - "/path/to/checkpoint": Resume from specific checkpoint
 RESUME_CHECKPOINT_CANDIDATES=("/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
          "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
-         "output/omnisvg_4b_20260506_231738/step_10000/model.safetensors")
+         "/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin")
          # "/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
          # "output/omnisvg_4b_20260506_231738/step_10000/model.safetensors"
 if [ -z "$RESUME_CHECKPOINT" ]; then
@@ -134,12 +139,15 @@ WANDB_PROJECT="omnisvg-training"
 # Config directory
 CONFIG_DIR="./configs"
 
-# Training config file name
+# Training config file name (relative to CONFIG_DIR).
+# Override at submit time, e.g. sbatch --export=ALL,TRAIN_CONFIG_FILE=job_bindings/....yaml
+# Or use: bash scripts/submit_run2_multi2.sh configs/your_variant.yaml
 # Options:
 #   - "train_config_code_complement.yaml" (Stage 2 SVG code-complement)
 #   - "train_config_low_memory.yaml" (optimized for low VRAM)
 #   - Or create your own custom config file
-TRAIN_CONFIG_FILE="train_config_cc_a100fat_fsdp.yaml"
+_DEFAULT_TRAIN_CONFIG="train_config_cc_a100fat_fsdp.yaml"
+resolve_train_config "${_DEFAULT_TRAIN_CONFIG}"
 
 # Accelerate config file (for DeepSpeed, FSDP, DDP, etc.)
 # Faster FSDP path: shards gradients/optimizer state but avoids FULL_SHARD all-gather overhead.
@@ -234,6 +242,7 @@ echo "Model Size:        ${MODEL_SIZE}"
 echo "Flash Attention:   ${USE_FLASH_ATTN}"
 echo "Disable NCCL P2P:  ${DISABLE_NCCL_P2P_IB}"
 echo "Train Config File: ${TRAIN_CONFIG_FILE}"
+print_bound_train_config
 echo "Code Complement:   ${CODE_COMPLEMENT_TASK}"
 echo "Skeleton CoT:      ${SKELETON_COT}"
 echo "Number of GPUs:    ${NUM_GPUS}"
