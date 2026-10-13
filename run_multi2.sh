@@ -43,12 +43,29 @@ NUM_GPUS=2
 BATCH_SIZE=1
 
 # Maximum SVG sequence length
-MAX_SEQ_LENGTH=8192
+MAX_SEQ_LENGTH=2048
 
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
-DATA_DIR="/gpfs/work/int/weiguangzhang21/data/my_l11"
+DATA_DIR_CANDIDATES=("/gpfs/work/int/linhuadong23/data/noisy_stage3/FZCaoQBLSJW/stage1_old2new"
+                     "/gpfs/work/int/weiguangzhang21/data/my_l11")
+
+
+if [ -z "${DATA_DIR:-}" ]; then
+  DATA_DIR=""
+  for _p in "${DATA_DIR_CANDIDATES[@]}"; do
+    if [ -e "$_p" ]; then
+      DATA_DIR="$_p"
+      break
+    fi
+  done
+  if [ -z "$DATA_DIR" ]; then
+    echo "Error: 未找到可用的 DATA_DIR，已尝试：" >&2
+    for _p in "${DATA_DIR_CANDIDATES[@]}"; do echo "  - $_p" >&2; done
+    exit 1
+  fi
+fi
 
 # Output directory for checkpoints and logs
 OUTPUT_DIR="./output"
@@ -61,7 +78,22 @@ PROJECT_NAME="omnisvg_4b_$(date +%Y%m%d_%H%M%S)"
 #   - "": Start from scratch
 #   - "auto": Download and use official OmniSVG checkpoint
 #   - "/path/to/checkpoint": Resume from specific checkpoint
-RESUME_CHECKPOINT="/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
+RESUME_CHECKPOINT_CANDIDATES=("/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
+                              "/gpfs/work/int/linhuadong23/weights/pytorch_model.bin")
+if [ -z "$RESUME_CHECKPOINT" ]; then
+    RESUME_CHECKPOINT=""
+    for _p in "${RESUME_CHECKPOINT_CANDIDATES[@]}"; do
+        if [ -e "$_p" ]; then
+            RESUME_CHECKPOINT="$_p"
+            break
+        fi
+    done
+    if [ -z "$RESUME_CHECKPOINT" ]; then
+        echo "Error: 未找到可用的 RESUME_CHECKPOINT，已尝试：" >&2
+        for _p in "${RESUME_CHECKPOINT_CANDIDATES[@]}"; do echo "  - $_p" >&2; done
+        exit 1
+    fi
+fi
 # "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
 # "output/omnisvg_4b_20260214_205636/step_3000"
 # "output/omnisvg_4b_20260209_021556/step_12000"
@@ -108,7 +140,7 @@ resolve_train_config "${_DEFAULT_TRAIN_CONFIG}"
 # ACCELERATE_CONFIG="configs/zero_stage2.yaml"         # DeepSpeed ZeRO Stage 2 (与PyTorch 2.5.0不兼容)
 # ACCELERATE_CONFIG="configs/fsdp_config.yaml"         # FSDP SIZE_BASED (与PyTorch 2.5.0的DTensor有冲突)
 
-ACCELERATE_CONFIG="configs/fsdp_config_performance.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
+ACCELERATE_CONFIG="configs/fsdp_config_speed.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
 # ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
 # ACCELERATE_CONFIG="configs/fsdp_config_minimal.yaml"  # FSDP 最简化配置（用于排查CUDA错误）
 # ACCELERATE_CONFIG="configs/fsdp_config_transformer.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
