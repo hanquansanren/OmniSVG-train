@@ -19,9 +19,20 @@ from PIL import Image
 try:
     from datasets import load_dataset, Dataset, concatenate_datasets
     HF_AVAILABLE = True
-except ImportError:
+except ImportError as exc:
+    # Keep the class body importable. Annotations such as `-> Dataset` are
+    # evaluated at definition time, so a failed optional import must still
+    # bind the name. This job path does not require HuggingFace datasets.
     HF_AVAILABLE = False
-    print("Warning: 'datasets' library not installed. Run: pip install datasets")
+    load_dataset = None
+    Dataset = Any
+    concatenate_datasets = None
+    print(
+        "Warning: failed to import 'datasets' "
+        f"({exc}). HuggingFace data loading is disabled. "
+        "The package may be installed but unusable because of a dependency "
+        "mismatch (commonly pyarrow requiring NumPy >= 2)."
+    )
 
 
 @dataclass

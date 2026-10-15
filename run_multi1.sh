@@ -37,7 +37,7 @@ DISABLE_TORCH_COMPILE="true"
 DISABLE_NCCL_P2P_IB="false" 
 
 # Number of GPUs to use
-NUM_GPUS=4
+NUM_GPUS=2
 
 # Batch size per GPU
 BATCH_SIZE=1
