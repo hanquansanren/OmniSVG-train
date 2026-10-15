@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# 批量并行提交 eval_run.sh（多卡、gpu4090 / gpu40901t 交替）
+# 批量并行提交 eval_run.sh（默认分区 gpu40901t；可用 PARTITIONS 覆盖）
 #
 # 用法（在仓库根目录）:
 #   bash scripts/submit_eval_batch.sh
@@ -29,7 +29,7 @@ STEPS="${STEPS:-1000 900 800 700 600 500 400 300 200 100}"
 SKIP_STEPS="${SKIP_STEPS:-}"
 SKIP_DONE="${SKIP_DONE:-true}"
 # 交替使用的分区列表
-PARTITIONS="${PARTITIONS:-gpu4090 gpu40901t gpua8001t}"
+PARTITIONS="${PARTITIONS:-gpu40901t}"
 # sbatch job 名前缀，默认取 run 时间戳部分
 JOB_PREFIX="${JOB_PREFIX:-${RUN#grpo_4b_}}"
 

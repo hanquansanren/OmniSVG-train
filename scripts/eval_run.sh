@@ -6,8 +6,8 @@
 #SBATCH -G 1
 #SBATCH --output=logs/eval_%j.out
 # OmniSVG 测试集推理 + 指标评测（SSIM / LPIPS / MSE）
-#   任务1 img2svg：        ./eval/eval_task1_1 (stage1_old2old 验证集抽样；eval_task1_2 为 old2new，PNG 相同)
-#   任务2 code-complement：./eval/eval_task2   (my_lis2_2 验证集抽样)
+#   任务1 img2svg：        eval_task1_1 / eval_task1_2（configs/config_zhuan.yaml；1_1→8192 tok，1_2→2048）
+#   任务2 code-complement：./eval/eval_task2   (configs/config_code_complement.yaml)
 #
 # 用法（在仓库根目录下）:
 #   sbatch scripts/eval_run.sh                                  # 集群提交
@@ -16,6 +16,7 @@
 #   TASKS="complete" STAGE=eval CANDIDATE=best bash scripts/eval_run.sh   # 只重新评测任务2
 #
 # 注意: sbatch 的 --output 目录需事先存在（mkdir -p logs）。
+# 测试集生成: bash scripts/prepare_eval_sets.sh [--overwrite]  （扩样本: NUM=600 ...）
 
 set -euo pipefail
 
@@ -52,6 +53,9 @@ STAGE="${STAGE:-all}"
 TEST_DIR_IMG2SVG="${TEST_DIR_IMG2SVG:-./eval/eval_task1_1}"
 TEST_DIR_COMPLETE="${TEST_DIR_COMPLETE:-./eval/eval_task2}"
 
+INFER_CONFIG_IMG2SVG="${INFER_CONFIG_IMG2SVG:-./configs/config_zhuan.yaml}"
+INFER_CONFIG_COMPLETE="${INFER_CONFIG_COMPLETE:-./configs/config_code_complement.yaml}"
+
 WEIGHT_MODEL="${WEIGHT_MODEL:-output_grpo/20260928_022117_5000/model.safetensors}"
 # output_grpo/20260928_022117_5000/model.safetensors
 # output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors
@@ -86,6 +90,8 @@ CANDIDATE="${CANDIDATE:-1}"                   # 1 / 2 / ... / best
 BEST_BY="${BEST_BY:-lpips}"                   # CANDIDATE=best 时的挑选指标
 MISSING="${MISSING:-fallback}"                # fallback / skip
 PRED_SOURCE="${PRED_SOURCE:-overlay}"         # 任务2: overlay / combined
+# 任务1 GT：auto 优先读 test_dir/gt200/（由 svg1 或 svg2 预渲染）
+GT_SOURCE="${GT_SOURCE:-auto}"
 SAVE_VIS="${SAVE_VIS:-true}"
 NO_LPIPS="${NO_LPIPS:-false}"
 EXTRA_EVAL_ARGS="${EXTRA_EVAL_ARGS:-}"
@@ -136,18 +142,35 @@ echo "============================================================"
 # 推理
 # ==============================================================================
 
+_img2svg_max_length() {
+  local test_dir="$1"
+  if [ -n "${IMG2SVG_MAX_LENGTH:-}" ]; then
+    echo "$IMG2SVG_MAX_LENGTH"
+    return
+  fi
+  case "$test_dir" in
+    *eval_task1_1*) echo 8192 ;;
+    *eval_task1_2*) echo 2048 ;;
+    *) echo "" ;;
+  esac
+}
+
 run_infer() {
   local task="$1" test_dir="$2" pred_dir="$3" weight="$4"
-  local infer_task input
+  local infer_task input infer_config max_len
   if [ "$task" = "img2svg" ]; then
     infer_task="image-to-svg"
     input="$test_dir/png"
+    infer_config="$INFER_CONFIG_IMG2SVG"
+    max_len="$(_img2svg_max_length "$test_dir")"
   else
     infer_task="code-complement"
     input="$test_dir"
+    infer_config="$INFER_CONFIG_COMPLETE"
   fi
 
   local cmd=( "$PYTHON" ./inference.py
+    --config "$infer_config"
     --task "$infer_task"
     --input "$input"
     --output "$pred_dir"
@@ -155,6 +178,9 @@ run_infer() {
     --weight-path "$weight"
     --save-svg
   )
+  if [ "$task" = "img2svg" ] && [ -n "$max_len" ]; then
+    cmd+=( --max-length "$max_len" )
+  fi
   [ "$SAVE_PNG" = "true" ] && cmd+=( --save-png )
   [ "$SAVE_ALL_CANDIDATES" = "true" ] && cmd+=( --save-all-candidates )
   [ -n "$NUM_CANDIDATES" ] && cmd+=( --num-candidates "$NUM_CANDIDATES" )
@@ -188,6 +214,7 @@ run_eval() {
     --missing "$MISSING"
   )
   [ "$task" = "complete" ] && cmd+=( --pred_source "$PRED_SOURCE" )
+  [ "$task" = "img2svg" ] && cmd+=( --gt_source "$GT_SOURCE" )
   [ "$SAVE_VIS" = "true" ] && cmd+=( --save_vis )
   [ "$NO_LPIPS" = "true" ] && cmd+=( --no_lpips )
   # shellcheck disable=SC2206

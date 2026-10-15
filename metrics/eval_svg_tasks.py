@@ -134,6 +134,107 @@ def to_uint8(img):
     return (np.clip(img, 0, 1) * 255).round().astype(np.uint8)
 
 
+def render_svg_file_on_white(svg_path, size):
+    """Render an SVG file onto a white square canvas."""
+    with open(svg_path, "r", encoding="utf-8") as f:
+        layer = render_svg_rgba(f.read(), size)
+    if layer is None:
+        return None
+    return over(white_canvas(size), layer)
+
+
+def default_img2svg_svg_subdir(test_dir):
+    """Which GT SVG folder to use: eval_task1_1 -> svg1, eval_task1_2 -> svg2."""
+    base = os.path.basename(os.path.normpath(test_dir))
+    if base == "eval_task1_2":
+        return "svg2"
+    if os.path.isdir(os.path.join(test_dir, "svg2")) and not os.path.isdir(
+        os.path.join(test_dir, "svg1")
+    ):
+        return "svg2"
+    if os.path.isdir(os.path.join(test_dir, "svg1")):
+        return "svg1"
+    return None
+
+
+def load_gt200_png(test_dir, uid, size):
+    png_path = os.path.join(test_dir, "gt200", uid + ".png")
+    if not os.path.exists(png_path):
+        raise FileNotFoundError(f"GT png not found: {png_path}")
+    img = Image.open(png_path).convert("RGB")
+    if img.size != (size, size):
+        img = img.resize((size, size), Image.Resampling.LANCZOS)
+    return np.asarray(img, dtype=np.float64) / 255.0
+
+
+def rebuild_img2svg_gt200(test_dir, size=VIEWBOX_SIZE, ids=None, svg_subdir=None):
+    """Write gt200/ by rendering svg1/ (task1_1) or svg2/ (task1_2), not from png/."""
+    if ids is None:
+        ids = read_ids(test_dir)
+    if svg_subdir is None:
+        svg_subdir = default_img2svg_svg_subdir(test_dir)
+    if not svg_subdir:
+        raise ValueError(f"No svg1/ or svg2/ under {test_dir}")
+
+    for legacy in ("gt200_svg1", "gt200_svg2"):
+        path = os.path.join(test_dir, legacy)
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+
+    svg_dir = os.path.join(test_dir, svg_subdir)
+    if not os.path.isdir(svg_dir):
+        raise FileNotFoundError(f"Missing {svg_dir}")
+
+    out_dir = os.path.join(test_dir, "gt200")
+    if os.path.isdir(out_dir):
+        shutil.rmtree(out_dir)
+    os.makedirs(out_dir)
+
+    for uid in ids:
+        svg_path = os.path.join(svg_dir, uid + ".svg")
+        if not os.path.exists(svg_path):
+            raise FileNotFoundError(f"Missing {svg_path}")
+        gt = render_svg_file_on_white(svg_path, size)
+        if gt is None:
+            raise RuntimeError(f"Failed to render {svg_path}")
+        Image.fromarray(to_uint8(gt)).save(os.path.join(out_dir, uid + ".png"))
+    return svg_subdir
+
+
+def load_gt_image(task, test_dir, uid, size, gt_source="auto"):
+    """GT image on the square canvas.
+
+    img2svg:  gt200/ (from svg1 or svg2), or render svg1/svg2 / input png on demand.
+    complete: the input (partial) PNG with the GT replacement paths rendered on top.
+    """
+    if task == "img2svg":
+        if gt_source == "png":
+            return load_png_on_canvas(os.path.join(test_dir, "png", uid + ".png"), size)
+        if gt_source == "gt200":
+            return load_gt200_png(test_dir, uid, size)
+        if gt_source == "auto":
+            gt_png = os.path.join(test_dir, "gt200", uid + ".png")
+            if os.path.exists(gt_png):
+                return load_gt200_png(test_dir, uid, size)
+            gt_source = default_img2svg_svg_subdir(test_dir) or "png"
+        if gt_source in ("svg1", "svg2"):
+            svg_path = os.path.join(test_dir, gt_source, uid + ".svg")
+            if not os.path.exists(svg_path):
+                raise FileNotFoundError(f"GT SVG not found: {svg_path}")
+            gt = render_svg_file_on_white(svg_path, size)
+            if gt is None:
+                raise RuntimeError(f"Failed to render GT SVG {svg_path}")
+            return gt
+        return load_png_on_canvas(os.path.join(test_dir, "png", uid + ".png"), size)
+
+    base = load_png_on_canvas(os.path.join(test_dir, "png", uid + ".png"), size)
+    paths = load_gt_replacement_paths(os.path.join(test_dir, "json", uid + ".json"))
+    layer = render_svg_rgba(paths_to_svg(paths), size)
+    if layer is None:
+        raise RuntimeError(f"Failed to render GT replacement for {uid}")
+    return over(base, layer)
+
+
 # ---------------------------------------------------------------------------
 # Metrics
 # ---------------------------------------------------------------------------
@@ -364,7 +465,7 @@ def cmd_split(args):
     if os.path.exists(args.out_dir) and os.listdir(args.out_dir) and not args.overwrite:
         print(f"Error: {args.out_dir} is not empty. Use --overwrite to replace it.")
         sys.exit(1)
-    for d in subdirs + ["gt200"]:
+    for d in subdirs:
         path = os.path.join(args.out_dir, d)
         if args.overwrite and os.path.isdir(path):
             shutil.rmtree(path)
@@ -375,8 +476,10 @@ def cmd_split(args):
         for d in subdirs:
             shutil.copy2(os.path.join(root, d, uid + exts[d]),
                          os.path.join(args.out_dir, d, uid + exts[d]))
-        gt = load_gt_image(args.task, args.out_dir, uid, VIEWBOX_SIZE)
-        Image.fromarray(to_uint8(gt)).save(os.path.join(args.out_dir, "gt200", uid + ".png"))
+
+    if args.task == "img2svg" and default_img2svg_svg_subdir(args.out_dir):
+        sub = rebuild_img2svg_gt200(args.out_dir, VIEWBOX_SIZE, [r["id"] for r in picked])
+        print(f"Built gt200/ from {sub}/")
 
     with open(os.path.join(args.out_dir, "test_meta.csv"), "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -390,20 +493,11 @@ def cmd_split(args):
         print(f"Inference input: --task code-complement --input {args.out_dir}")
 
 
-def load_gt_image(task, test_dir, uid, size):
-    """GT image on the square canvas.
-
-    img2svg:  the input PNG itself.
-    complete: the input (partial) PNG with the GT replacement paths rendered on top.
-    """
-    base = load_png_on_canvas(os.path.join(test_dir, "png", uid + ".png"), size)
-    if task == "img2svg":
-        return base
-    paths = load_gt_replacement_paths(os.path.join(test_dir, "json", uid + ".json"))
-    layer = render_svg_rgba(paths_to_svg(paths), size)
-    if layer is None:
-        raise RuntimeError(f"Failed to render GT replacement for {uid}")
-    return over(base, layer)
+def cmd_rebuild_gt200(args):
+    ids = read_ids(args.test_dir)
+    svg_subdir = args.svg_subdir
+    sub = rebuild_img2svg_gt200(args.test_dir, args.size, ids, svg_subdir=svg_subdir)
+    print(f"Rebuilt gt200/ from {sub}/ under {args.test_dir} ({len(ids)} samples)")
 
 
 def cmd_img2svg(args):
@@ -418,7 +512,9 @@ def cmd_img2svg(args):
 
     rows = evaluate_samples(
         ids,
-        load_gt=lambda uid: load_gt_image("img2svg", args.test_dir, uid, size),
+        load_gt=lambda uid: load_gt_image(
+            "img2svg", args.test_dir, uid, size, gt_source=args.gt_source
+        ),
         load_fallback=lambda uid: white_canvas(size),
         make_pred=make_pred,
         find=lambda uid: find_candidates(args.pred_dir, uid, "svg"),
@@ -495,6 +591,15 @@ def add_eval_args(p):
     p.add_argument("--save_vis", action="store_true", help="Save GT|Pred side-by-side images")
 
 
+def add_img2svg_gt_args(p):
+    p.add_argument(
+        "--gt_source",
+        default="auto",
+        choices=["auto", "png", "svg1", "svg2", "gt200"],
+        help="img2svg GT: auto uses gt200/ if present (else svg1/svg2 by test set), or explicit",
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -514,7 +619,18 @@ def main():
 
     p = sub.add_parser("img2svg", help="Evaluate the image-to-svg task")
     add_eval_args(p)
+    add_img2svg_gt_args(p)
     p.set_defaults(func=cmd_img2svg)
+
+    p = sub.add_parser(
+        "rebuild-gt200",
+        help="Regenerate gt200/ from svg1/ (eval_task1_1) or svg2/ (eval_task1_2)",
+    )
+    p.add_argument("--test_dir", required=True)
+    p.add_argument("--size", type=int, default=VIEWBOX_SIZE)
+    p.add_argument("--svg_subdir", choices=["svg1", "svg2"], default=None,
+                   help="Force GT SVG folder (default: infer from test_dir name)")
+    p.set_defaults(func=cmd_rebuild_gt200)
 
     p = sub.add_parser("complete", help="Evaluate the SVG code-complement task")
     add_eval_args(p)
