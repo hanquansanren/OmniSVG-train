@@ -1,0 +1,41 @@
+# FSDP - max_seq_length 8192 极限省显存（慢，OOM 时再用）
+# 典型：~50s/step @ 2×A800（offload + 细粒度 SIZE wrap + 激活重算）
+# 更快请用 fsdp_config_8192.yaml
+
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+
+fsdp_config:
+  fsdp_auto_wrap_policy: SIZE_BASED_WRAP
+  fsdp_min_num_params: 1000000
+
+  fsdp_sharding_strategy: FULL_SHARD
+  fsdp_backward_prefetch: BACKWARD_POST
+  fsdp_forward_prefetch: false
+
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+  fsdp_sync_module_states: false
+  fsdp_use_orig_params: false
+  fsdp_cpu_ram_efficient_loading: false
+
+  fsdp_offload_params: true
+  fsdp_activation_checkpointing: true
+
+mixed_precision: bf16
+downcast_bf16: 'no'
+
+num_processes: 4
+gpu_ids: all
+use_cpu: false
+
+num_machines: 1
+machine_rank: 0
+main_process_ip: null
+main_process_port: null
+
+main_training_function: main
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false

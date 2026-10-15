@@ -82,6 +82,12 @@ SAVE_PNG="${SAVE_PNG:-true}"
 SAVE_ALL_CANDIDATES="${SAVE_ALL_CANDIDATES:-true}"
 NUM_CANDIDATES="${NUM_CANDIDATES:-}"          # 为空则用 inference.py 默认值
 SKELETON_COT="${SKELETON_COT:-true}"          # 仅对 code-complement 生效
+# 仅对 img2svg 生效。训练时只做 alpha 合成到白底，不做背景替换；
+# 对灰色/噪声背景输入开启替换会产生大块灰斑，严重偏离训练分布
+REPLACE_BACKGROUND="${REPLACE_BACKGROUND:-false}"
+# 仅对 img2svg 生效。greedy 时每张图只生成 1 个候选，NUM_CANDIDATES 无效
+GREEDY_IMG2SVG="${GREEDY_IMG2SVG:-true}"
+REPETITION_PENALTY_IMG2SVG="${REPETITION_PENALTY_IMG2SVG:-1.0}"
 # 追加传给 inference.py 的参数，例如: EXTRA_INFER_ARGS="--temperature 0.3 --verbose"
 EXTRA_INFER_ARGS="${EXTRA_INFER_ARGS:-}"
 
@@ -180,6 +186,13 @@ run_infer() {
   )
   if [ "$task" = "img2svg" ] && [ -n "$max_len" ]; then
     cmd+=( --max-length "$max_len" )
+  fi
+  if [ "$task" = "img2svg" ] && [ "$REPLACE_BACKGROUND" != "true" ]; then
+    cmd+=( --no-replace-background )
+  fi
+  if [ "$task" = "img2svg" ]; then
+    [ "$GREEDY_IMG2SVG" = "true" ] && cmd+=( --greedy )
+    [ -n "$REPETITION_PENALTY_IMG2SVG" ] && cmd+=( --repetition-penalty "$REPETITION_PENALTY_IMG2SVG" )
   fi
   [ "$SAVE_PNG" = "true" ] && cmd+=( --save-png )
   [ "$SAVE_ALL_CANDIDATES" = "true" ] && cmd+=( --save-all-candidates )

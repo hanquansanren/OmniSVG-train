@@ -40,9 +40,8 @@ svg_condition_encoder = None
 current_model_size = None
 
 # Constants from config (populated by load_inference_config)
-SYSTEM_PROMPT = """You are an expert SVG code generator. 
-Generate precise, valid SVG path commands that accurately represent the described scene or object.
-Focus on capturing key shapes, spatial relationships, and visual composition."""
+# Must match create_collate_fn in train.py
+SYSTEM_PROMPT = "You are an expert SVG code generator."
 
 SUPPORTED_FORMATS = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif']
 AVAILABLE_MODEL_SIZES = []
@@ -295,6 +294,8 @@ def parse_args():
                         help='Top-k sampling (default: task-specific)')
     parser.add_argument('--repetition-penalty', type=float, default=None,
                         help='Repetition penalty (default: task-specific)')
+    parser.add_argument('--greedy', action='store_true', default=False,
+                        help='Greedy decoding (ignores temperature/top-p/top-k; yields a single candidate)')
     parser.add_argument('--max-length', type=int, default=MAX_LENGTH,
                         help=f'Max token length (default: {MAX_LENGTH})')
     parser.add_argument('--condition-max-length', type=int, default=1524,
@@ -977,7 +978,7 @@ def prepare_code_complement_inputs(svg_path, image, condition_max_length=None):
     )
 
     messages = [
-        {"role": "system", "content": "You are an expert SVG code generator."},
+        {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": [
             {"type": "text", "text": instruction},
             {"type": "image", "image": image},
@@ -1195,7 +1196,7 @@ def is_valid_candidate(svg_str, img, subtype="illustration"):
 
 
 def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, repetition_penalty, 
-                       max_length, num_samples, verbose=False, skeleton_cot=False):
+                       max_length, num_samples, verbose=False, skeleton_cot=False, greedy=False):
     """Generate candidate SVGs with full parameter control"""
     
     # Get the correct device from the model's embedding layer
@@ -1221,19 +1222,25 @@ def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, r
     all_candidates = []
     
     gen_cfg = {
-        'do_sample': True,
-        'temperature': temperature,
-        'top_p': top_p,
-        'top_k': int(top_k),
         'repetition_penalty': repetition_penalty,
-        'early_stopping': True,
         'no_repeat_ngram_size': 0,
         'eos_token_id': EOS_TOKEN_ID,
         'pad_token_id': PAD_TOKEN_ID,
         'bos_token_id': BOS_TOKEN_ID,
     }
-    
-    actual_samples = num_samples + EXTRA_CANDIDATES_BUFFER
+    if greedy:
+        gen_cfg['do_sample'] = False
+        # Greedy decoding is deterministic: extra return sequences would be identical
+        actual_samples = 1
+    else:
+        gen_cfg.update({
+            'do_sample': True,
+            'temperature': temperature,
+            'top_p': top_p,
+            'top_k': int(top_k),
+            'early_stopping': True,
+        })
+        actual_samples = num_samples + EXTRA_CANDIDATES_BUFFER
     
     try:
         with torch.no_grad():
@@ -1451,7 +1458,8 @@ def process_text_to_svg(args):
             inputs, "text-to-svg", subtype,
             temperature, top_p, top_k, rep_penalty,
             args.max_length, args.num_candidates,
-            verbose=args.verbose
+            verbose=args.verbose,
+            greedy=args.greedy,
         )
         
         elapsed = time.time() - start_time
@@ -1559,7 +1567,8 @@ def process_image_to_svg(args):
                     inputs, "image-to-svg", "image",
                     temperature, top_p, top_k, rep_penalty,
                     args.max_length, args.num_candidates,
-                    verbose=args.verbose
+                    verbose=args.verbose,
+                    greedy=args.greedy,
                 )
                 
                 elapsed = time.time() - start_time
@@ -1674,6 +1683,7 @@ def process_code_complement(args):
                 args.max_length, args.num_candidates,
                 verbose=args.verbose,
                 skeleton_cot=use_skeleton_cot,
+                greedy=args.greedy,
             )
 
             elapsed = time.time() - start_time

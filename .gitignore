@@ -152,3 +152,4 @@ eval/*
 eval_results/*
 configs/job_bindings
 experiments/
+transfer_audit

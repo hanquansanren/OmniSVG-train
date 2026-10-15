@@ -9,8 +9,8 @@ model:
   use_flash_attn: true
   torch_dtype: "bfloat16"
   
-  # FSDP activation checkpointing会自动节省显存
-  # A100 40GB可以不开gradient_checkpointing
+  # 8192 序列：用 FSDP fsdp_activation_checkpointing（见 fsdp_config_8192.yaml）
+  # 不要同时开模型级 gradient_checkpointing（与 FSDP AC 重复/冲突）
   use_gradient_checkpointing: false
 
 # ==============================================================================

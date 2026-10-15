@@ -139,8 +139,10 @@ resolve_train_config "${_DEFAULT_TRAIN_CONFIG}"
 # ACCELERATE_CONFIG="configs/zero_stage2.yaml"         # DeepSpeed ZeRO Stage 2 (与PyTorch 2.5.0不兼容)
 # ACCELERATE_CONFIG="configs/fsdp_config.yaml"         # FSDP SIZE_BASED (与PyTorch 2.5.0的DTensor有冲突)
 
-ACCELERATE_CONFIG="configs/fsdp_config_performance.yaml"          # DDP (最稳定，但显存占用高) - CUDA错误时的首选
-# ACCELERATE_CONFIG="configs/fsdp_config_sharded.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
+# max_seq_length=8192：默认 fsdp_config_8192（快）；OOM 再换 fsdp_config_8192_offload.yaml
+ACCELERATE_CONFIG="configs/fsdp_config_8192.yaml"
+# ACCELERATE_CONFIG="configs/fsdp_config_8192_offload.yaml"
+# ACCELERATE_CONFIG="configs/fsdp_config_performance.yaml"
 # ACCELERATE_CONFIG="configs/fsdp_config_minimal.yaml"  # FSDP 最简化配置（用于排查CUDA错误）
 # ACCELERATE_CONFIG="configs/fsdp_config_transformer.yaml"  # FSDP TRANSFORMER_BASED + Activation Checkpointing (显存优化) 
 # "configs/fsdp_config_sharded.yaml"
@@ -352,6 +354,9 @@ if command -v nvidia-smi >/dev/null 2>&1; then
 fi
 echo "--- End GPU Diagnostics ---"
 echo ""
+
+# 减轻 CUDA 分配碎片（长序列反向峰值时有用）
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 echo "Starting training..."
 echo "Command: ${ACCELERATE_CMD} train.py ${CMD_ARGS}"

@@ -1,0 +1,52 @@
+# FSDP Configuration - max_seq_length 8192（速度 / 显存折中，推荐默认）
+#
+# 相对 fsdp_config_performance.yaml（你曾 OOM 的配置）：
+# - 仍 FULL_SHARD + FSDP activation checkpointing（8192 必需）
+# - fsdp_use_orig_params: false（略省显存，避免 performance 反向峰值）
+# - fsdp_forward_prefetch: false（避免反向多占 ~数 GB）
+#
+# 相对 fsdp_config_8192_offload.yaml：
+# - 关 CPU 参数 offload（通常快 2–3×）
+# - TRANSFORMER_BASED_WRAP（通信更少，比 SIZE_BASED 更快）
+#
+# 若仍 OOM：改用 fsdp_config_8192_offload.yaml，或 NUM_GPUS=4
+
+compute_environment: LOCAL_MACHINE
+distributed_type: FSDP
+
+fsdp_config:
+  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+  fsdp_transformer_layer_cls_to_wrap: Qwen2_5_VLDecoderLayer,Qwen2_5_VLVisionBlock
+
+  fsdp_sharding_strategy: HYBRID_SHARD
+
+  fsdp_backward_prefetch: BACKWARD_PRE
+  fsdp_forward_prefetch: true
+
+  fsdp_state_dict_type: SHARDED_STATE_DICT
+
+  fsdp_sync_module_states: false
+  fsdp_use_orig_params: false
+  fsdp_cpu_ram_efficient_loading: false
+
+  fsdp_offload_params: false
+  fsdp_activation_checkpointing: true
+
+mixed_precision: bf16
+downcast_bf16: 'no'
+
+num_processes: 4
+gpu_ids: all
+use_cpu: false
+
+num_machines: 1
+machine_rank: 0
+main_process_ip: null
+main_process_port: null
+
+main_training_function: main
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
