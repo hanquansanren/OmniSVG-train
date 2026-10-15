@@ -24,7 +24,7 @@ MODEL_SIZE="4B"
 
 # Best SFT checkpoint to initialise the policy from.  This is the checkpoint
 # that inference_run.sh currently points at.
-SFT_CHECKPOINT="${SFT_CHECKPOINT:-output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors}"
+SFT_CHECKPOINT="${SFT_CHECKPOINT:-output_stage2/omnisvg_stage2_4b_20261013_044840/step_20000/model.safetensors}"
 # "${SFT_CHECKPOINT:-output_grpo/20260928_022117_5000/model.safetensors}"
 # "${SFT_CHECKPOINT:-output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors}"
 # "${SFT_CHECKPOINT:-/home/bingxing2/home/scx7l3f/weiguang_zhang/project/OmniSVG-train/output_stage2/model.safetensors}"
@@ -32,6 +32,7 @@ SFT_CHECKPOINT="${SFT_CHECKPOINT:-output_stage2/omnisvg_stage2_4b_20260926_03141
 # Stage-2 data directory (needs svg/, png/, json/, train_meta.csv, val_meta.csv)
 # DATA_DIR="${DATA_DIR:-/data/phd23_weiguang_zhang/works/svg/my_lis2_2}"
 DATA_DIR_CANDIDATES=("/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_lis2_2"
+         "/gpfs/work/int/weiguangzhang21/data/stage2/FZCaoQBLSJW"
          "/gpfs/work/int/weiguangzhang21/data/my_lis2_2"
          "/data/phd23_weiguang_zhang/works/svg/my_lis2_2")
 

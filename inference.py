@@ -23,12 +23,9 @@ from tokenizer import SVGTokenizer, TrainAlignedSVGTokenizer
 from deepsvg.svglib.svg import SVG as DeepSVG
 from utils.dataset import SVGTokenizer as TrainingSVGEncoder
 
-# Load config
-CONFIG_PATH = "./configs/config_code_complement.yaml"
-# "./config_code_complement.yaml"
-# "./config_zhuan.yaml"
-with open(CONFIG_PATH, 'r') as f:
-    config = yaml.safe_load(f)
+DEFAULT_CONFIG_PATH = "./configs/config_code_complement.yaml"
+CONFIG_PATH = DEFAULT_CONFIG_PATH
+config = {}
 
 # Use a default device, but we'll get the actual device from the model later
 default_device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -42,14 +39,132 @@ svg_tokenizer = None
 svg_condition_encoder = None
 current_model_size = None
 
-# Constants from config
+# Constants from config (populated by load_inference_config)
 SYSTEM_PROMPT = """You are an expert SVG code generator. 
 Generate precise, valid SVG path commands that accurately represent the described scene or object.
 Focus on capturing key shapes, spatial relationships, and visual composition."""
 
 SUPPORTED_FORMATS = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.gif']
-AVAILABLE_MODEL_SIZES = list(config.get('models', {}).keys())
-DEFAULT_MODEL_SIZE = config.get('default_model_size', '8B')
+AVAILABLE_MODEL_SIZES = []
+DEFAULT_MODEL_SIZE = "8B"
+TARGET_IMAGE_SIZE = 448
+RENDER_SIZE = 512
+BACKGROUND_THRESHOLD = 240
+EMPTY_THRESHOLD_ILLUSTRATION = 250
+EMPTY_THRESHOLD_ICON = 252
+EDGE_SAMPLE_RATIO = 0.1
+COLOR_SIMILARITY_THRESHOLD = 30
+MIN_EDGE_SAMPLES = 10
+BLACK_COLOR_TOKEN = 40012
+BOS_TOKEN_ID = 196998
+EOS_TOKEN_ID = 196999
+PAD_TOKEN_ID = 151643
+MAX_LENGTH = 1024
+MIN_MAX_LENGTH = 256
+MAX_MAX_LENGTH = 2048
+SKELETON_START_TOKEN_ID = 197000
+SKELETON_END_TOKEN_ID = 197001
+REPLACEMENT_START_TOKEN_ID = 197002
+REPLACEMENT_END_TOKEN_ID = 197003
+SKELETON_COT_MARKERS = set()
+TASK_CONFIGS = {}
+DEFAULT_NUM_CANDIDATES = 4
+MAX_NUM_CANDIDATES = 8
+EXTRA_CANDIDATES_BUFFER = 4
+MIN_SVG_LENGTH = 20
+
+
+def load_inference_config(config_path: str) -> None:
+    """Load inference YAML and refresh module-level constants derived from it."""
+    global CONFIG_PATH, config
+    global AVAILABLE_MODEL_SIZES, DEFAULT_MODEL_SIZE
+    global TARGET_IMAGE_SIZE, RENDER_SIZE, BACKGROUND_THRESHOLD
+    global EMPTY_THRESHOLD_ILLUSTRATION, EMPTY_THRESHOLD_ICON
+    global EDGE_SAMPLE_RATIO, COLOR_SIMILARITY_THRESHOLD, MIN_EDGE_SAMPLES
+    global BLACK_COLOR_TOKEN
+    global BOS_TOKEN_ID, EOS_TOKEN_ID, PAD_TOKEN_ID, MAX_LENGTH
+    global MAX_MAX_LENGTH, SKELETON_START_TOKEN_ID, SKELETON_END_TOKEN_ID
+    global REPLACEMENT_START_TOKEN_ID, REPLACEMENT_END_TOKEN_ID, SKELETON_COT_MARKERS
+    global TASK_CONFIGS, DEFAULT_NUM_CANDIDATES, MAX_NUM_CANDIDATES
+    global EXTRA_CANDIDATES_BUFFER, MIN_SVG_LENGTH
+
+    CONFIG_PATH = config_path
+    with open(CONFIG_PATH, 'r') as f:
+        config = yaml.safe_load(f)
+
+    AVAILABLE_MODEL_SIZES = list(config.get('models', {}).keys())
+    DEFAULT_MODEL_SIZE = config.get('default_model_size', '8B')
+
+    image_config = config.get('image', {})
+    TARGET_IMAGE_SIZE = image_config.get('target_size', 448)
+    RENDER_SIZE = image_config.get('render_size', 512)
+    BACKGROUND_THRESHOLD = image_config.get('background_threshold', 240)
+    EMPTY_THRESHOLD_ILLUSTRATION = image_config.get('empty_threshold_illustration', 250)
+    EMPTY_THRESHOLD_ICON = image_config.get('empty_threshold_icon', 252)
+    EDGE_SAMPLE_RATIO = image_config.get('edge_sample_ratio', 0.1)
+    COLOR_SIMILARITY_THRESHOLD = image_config.get('color_similarity_threshold', 30)
+    MIN_EDGE_SAMPLES = image_config.get('min_edge_samples', 10)
+
+    colors_config = config.get('colors', {})
+    BLACK_COLOR_TOKEN = colors_config.get(
+        'black_color_token',
+        colors_config.get('color_token_start', 40010) + 2,
+    )
+
+    model_config = config.get('model', {})
+    BOS_TOKEN_ID = model_config.get('bos_token_id', 196998)
+    EOS_TOKEN_ID = model_config.get('eos_token_id', 196999)
+    PAD_TOKEN_ID = model_config.get('pad_token_id', 151643)
+    MAX_LENGTH = model_config.get('max_length', 1024)
+    MAX_MAX_LENGTH = max(MAX_LENGTH, 2048)
+
+    SKELETON_START_TOKEN_ID = model_config.get('skeleton_start_token_id', 197000)
+    SKELETON_END_TOKEN_ID = model_config.get('skeleton_end_token_id', 197001)
+    REPLACEMENT_START_TOKEN_ID = model_config.get('replacement_start_token_id', 197002)
+    REPLACEMENT_END_TOKEN_ID = model_config.get('replacement_end_token_id', 197003)
+    SKELETON_COT_MARKERS = {
+        SKELETON_START_TOKEN_ID, SKELETON_END_TOKEN_ID,
+        REPLACEMENT_START_TOKEN_ID, REPLACEMENT_END_TOKEN_ID,
+    }
+
+    task_config = config.get('task_configs', {})
+    TASK_CONFIGS = {
+        "text-to-svg-icon": task_config.get('text_to_svg_icon', {
+            "default_temperature": 0.5,
+            "default_top_p": 0.88,
+            "default_top_k": 50,
+            "default_repetition_penalty": 1.05,
+        }),
+        "text-to-svg-illustration": task_config.get('text_to_svg_illustration', {
+            "default_temperature": 0.6,
+            "default_top_p": 0.90,
+            "default_top_k": 60,
+            "default_repetition_penalty": 1.03,
+        }),
+        "image-to-svg": task_config.get('image_to_svg', {
+            "default_temperature": 0.3,
+            "default_top_p": 0.90,
+            "default_top_k": 50,
+            "default_repetition_penalty": 1.05,
+        }),
+        "code-complement": task_config.get('code_complement', {
+            "default_temperature": 0.3,
+            "default_top_p": 0.90,
+            "default_top_k": 50,
+            "default_repetition_penalty": 1.05,
+        }),
+    }
+
+    gen_config = config.get('generation', {})
+    DEFAULT_NUM_CANDIDATES = gen_config.get('default_num_candidates', 4)
+    MAX_NUM_CANDIDATES = gen_config.get('max_num_candidates', 8)
+    EXTRA_CANDIDATES_BUFFER = gen_config.get('extra_candidates_buffer', 4)
+
+    validation_config = config.get('validation', {})
+    MIN_SVG_LENGTH = validation_config.get('min_svg_length', 20)
+
+
+load_inference_config(DEFAULT_CONFIG_PATH)
 
 
 def get_config_value(model_size, *keys):
@@ -72,80 +187,6 @@ def get_config_value(model_size, *keys):
                 return None
     
     return value
-
-
-# Image processing settings from config
-image_config = config.get('image', {})
-TARGET_IMAGE_SIZE = image_config.get('target_size', 448)
-RENDER_SIZE = image_config.get('render_size', 512)
-BACKGROUND_THRESHOLD = image_config.get('background_threshold', 240)
-EMPTY_THRESHOLD_ILLUSTRATION = image_config.get('empty_threshold_illustration', 250)
-EMPTY_THRESHOLD_ICON = image_config.get('empty_threshold_icon', 252)
-EDGE_SAMPLE_RATIO = image_config.get('edge_sample_ratio', 0.1)
-COLOR_SIMILARITY_THRESHOLD = image_config.get('color_similarity_threshold', 30)
-MIN_EDGE_SAMPLES = image_config.get('min_edge_samples', 10)
-
-# Color settings from config
-colors_config = config.get('colors', {})
-BLACK_COLOR_TOKEN = colors_config.get('black_color_token', 
-                                       colors_config.get('color_token_start', 40010) + 2)
-
-# Model settings from config
-model_config = config.get('model', {})
-BOS_TOKEN_ID = model_config.get('bos_token_id', 196998)
-EOS_TOKEN_ID = model_config.get('eos_token_id', 196999)
-PAD_TOKEN_ID = model_config.get('pad_token_id', 151643)
-MAX_LENGTH = model_config.get('max_length', 1024)
-MIN_MAX_LENGTH = 256
-MAX_MAX_LENGTH = 2048
-
-# Skeleton CoT marker tokens
-SKELETON_START_TOKEN_ID = model_config.get('skeleton_start_token_id', 197000)
-SKELETON_END_TOKEN_ID = model_config.get('skeleton_end_token_id', 197001)
-REPLACEMENT_START_TOKEN_ID = model_config.get('replacement_start_token_id', 197002)
-REPLACEMENT_END_TOKEN_ID = model_config.get('replacement_end_token_id', 197003)
-SKELETON_COT_MARKERS = {SKELETON_START_TOKEN_ID, SKELETON_END_TOKEN_ID,
-                        REPLACEMENT_START_TOKEN_ID, REPLACEMENT_END_TOKEN_ID}
-
-# Task configurations with defaults from config
-task_config = config.get('task_configs', {})
-
-TASK_CONFIGS = {
-    "text-to-svg-icon": task_config.get('text_to_svg_icon', {
-        "default_temperature": 0.5,
-        "default_top_p": 0.88,
-        "default_top_k": 50,
-        "default_repetition_penalty": 1.05,
-    }),
-    "text-to-svg-illustration": task_config.get('text_to_svg_illustration', {
-        "default_temperature": 0.6,
-        "default_top_p": 0.90,
-        "default_top_k": 60,
-        "default_repetition_penalty": 1.03,
-    }),
-    "image-to-svg": task_config.get('image_to_svg', {
-        "default_temperature": 0.3,
-        "default_top_p": 0.90,
-        "default_top_k": 50,
-        "default_repetition_penalty": 1.05,
-    }),
-    "code-complement": task_config.get('code_complement', {
-        "default_temperature": 0.3,
-        "default_top_p": 0.90,
-        "default_top_k": 50,
-        "default_repetition_penalty": 1.05,
-    })
-}
-
-# Generation parameters from config
-gen_config = config.get('generation', {})
-DEFAULT_NUM_CANDIDATES = gen_config.get('default_num_candidates', 4)
-MAX_NUM_CANDIDATES = gen_config.get('max_num_candidates', 8)
-EXTRA_CANDIDATES_BUFFER = gen_config.get('extra_candidates_buffer', 4)
-
-# Validation settings from config
-validation_config = config.get('validation', {})
-MIN_SVG_LENGTH = validation_config.get('min_svg_length', 20)
 
 
 def get_model_input_device():
@@ -198,8 +239,21 @@ def get_model_devices_info():
 
 
 def parse_args():
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    pre_parser.add_argument(
+        '--config', type=str, default=DEFAULT_CONFIG_PATH,
+        help=argparse.SUPPRESS,
+    )
+    pre_args, remaining_argv = pre_parser.parse_known_args()
+    if pre_args.config != CONFIG_PATH:
+        load_inference_config(pre_args.config)
+
     parser = argparse.ArgumentParser(description='OmniSVG Inference Script')
-    
+    parser.add_argument(
+        '--config', type=str, default=pre_args.config,
+        help=f'Inference YAML (default: {DEFAULT_CONFIG_PATH})',
+    )
+
     # Task selection
     parser.add_argument('--task', type=str, required=True, choices=['text-to-svg', 'image-to-svg', 'code-complement'],
                         help='Task type: text-to-svg, image-to-svg, or code-complement')
@@ -275,8 +329,11 @@ def parse_args():
     # Debug
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='Enable verbose output')
-    
-    return parser.parse_args()
+
+    args = parser.parse_args(remaining_argv)
+    if args.config != CONFIG_PATH:
+        load_inference_config(args.config)
+    return args
 
 
 def download_model_weights(repo_id: str, filename: str = "pytorch_model.bin") -> str:
@@ -309,7 +366,8 @@ def is_local_path(path: str) -> bool:
 
 
 def load_models(model_size: str, weight_path: str = None, model_path: str = None,
-                use_train_tokenizer: bool = False, tokenization_config_path: str = None):
+                use_train_tokenizer: bool = False, tokenization_config_path: str = None,
+                max_pix_len: int = None):
     """Load all models for a specific model size."""
     global tokenizer, processor, sketch_decoder, svg_tokenizer, svg_condition_encoder, current_model_size
     
@@ -347,11 +405,12 @@ def load_models(model_size: str, weight_path: str = None, model_path: str = None
                         .get(model_size, {})
                         .get('model', {})
                         .get('vocab_size', 197000))
+    pix_len = max_pix_len if max_pix_len is not None else MAX_MAX_LENGTH
     sketch_decoder = SketchDecoder(
         config_path=CONFIG_PATH,
         model_path=model_path,
         model_size=model_size,
-        pix_len=MAX_MAX_LENGTH,
+        pix_len=pix_len,
         text_len=config.get('text', {}).get('max_length', 200),
         torch_dtype=DTYPE,
         vocab_size=infer_vocab_size,
@@ -1664,6 +1723,7 @@ def main():
     print("OmniSVG Inference Script")
     print("="*60)
     print(f"Task: {args.task}")
+    print(f"Config: {CONFIG_PATH}")
     print(f"Model Size: {args.model_size}")
     print(f"Input: {args.input}")
     print(f"Output: {args.output}")
@@ -1672,12 +1732,14 @@ def main():
     print(f"Num Candidates: {args.num_candidates}")
     print(f"Max Length: {args.max_length}")
     print("="*60)
-    
+
+    max_pix_len = max(args.max_length, MAX_MAX_LENGTH)
     # Load models
     load_models(
         args.model_size, args.weight_path, args.model_path,
         use_train_tokenizer=args.use_train_tokenizer,
         tokenization_config_path=args.tokenization_config,
+        max_pix_len=max_pix_len,
     )
     
     # Process based on task type
