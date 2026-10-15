@@ -6,7 +6,7 @@
 #SBATCH -G 1
 #SBATCH --output=logs/eval_%j.out
 # OmniSVG 测试集推理 + 指标评测（SSIM / LPIPS / MSE）
-#   任务1 img2svg：        ./eval/eval_task1_1 (stage1_old2old 验证集抽样；eval_task1_2 为 old2new，PNG 相同)
+#   任务1 img2svg：        eval_task1_1 (gt200←svg1) / eval_task1_2 (gt200←svg2)，输入 png 相同
 #   任务2 code-complement：./eval/eval_task2   (my_lis2_2 验证集抽样)
 #
 # 用法（在仓库根目录下）:
@@ -16,6 +16,7 @@
 #   TASKS="complete" STAGE=eval CANDIDATE=best bash scripts/eval_run.sh   # 只重新评测任务2
 #
 # 注意: sbatch 的 --output 目录需事先存在（mkdir -p logs）。
+# 测试集生成: bash scripts/prepare_eval_sets.sh [--overwrite]  （扩样本: NUM=600 ...）
 
 set -euo pipefail
 
@@ -86,6 +87,8 @@ CANDIDATE="${CANDIDATE:-1}"                   # 1 / 2 / ... / best
 BEST_BY="${BEST_BY:-lpips}"                   # CANDIDATE=best 时的挑选指标
 MISSING="${MISSING:-fallback}"                # fallback / skip
 PRED_SOURCE="${PRED_SOURCE:-overlay}"         # 任务2: overlay / combined
+# 任务1 GT：auto 优先读 test_dir/gt200/（由 svg1 或 svg2 预渲染）
+GT_SOURCE="${GT_SOURCE:-auto}"
 SAVE_VIS="${SAVE_VIS:-true}"
 NO_LPIPS="${NO_LPIPS:-false}"
 EXTRA_EVAL_ARGS="${EXTRA_EVAL_ARGS:-}"
@@ -187,6 +190,7 @@ run_eval() {
     --missing "$MISSING"
   )
   [ "$task" = "complete" ] && cmd+=( --pred_source "$PRED_SOURCE" )
+  [ "$task" = "img2svg" ] && cmd+=( --gt_source "$GT_SOURCE" )
   [ "$SAVE_VIS" = "true" ] && cmd+=( --save_vis )
   [ "$NO_LPIPS" = "true" ] && cmd+=( --no_lpips )
   # shellcheck disable=SC2206
