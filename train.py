@@ -655,14 +655,23 @@ def process_mixed_batch(
         image_grid_thw = inputs.get('image_grid_thw')
         
         for idx, i in enumerate(vision_indices):
+            # Budget image placeholders separately from prompt and SVG output.
+            image_token_id = processor.tokenizer.convert_tokens_to_ids(processor.image_token)
+            image_token_count = int((inputs['input_ids'][idx] == image_token_id).sum().item())
             input_ids, attention_mask, labels = _process_sample(
                 inputs['input_ids'][idx].tolist(),
                 inputs['attention_mask'][idx].tolist(),
                 condition_seq_lists[i],
                 pix_seq_lists[i],
-                context_max_len,
+                max(context_max_len + image_token_count, len(inputs['input_ids'][idx])),
                 target_max_len,
             )
+            original_context = inputs['input_ids'][idx].tolist()
+            original_mask = inputs['attention_mask'][idx].tolist()
+            if input_ids[:len(original_context)].tolist() != original_context or attention_mask[:len(original_mask)].tolist() != original_mask:
+                raise ValueError("Image/prompt input was changed or truncated; refusing training")
+            if int((input_ids == image_token_id).sum().item()) != image_token_count:
+                raise ValueError("Image placeholders were truncated; refusing misaligned image input")
             batch_input_ids.append((i, input_ids))
             batch_attention_mask.append((i, attention_mask))
             batch_labels.append((i, labels))

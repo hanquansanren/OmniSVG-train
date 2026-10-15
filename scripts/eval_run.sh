@@ -33,7 +33,7 @@ fi
 
 # 可选：激活 conda 环境（为空则使用当前环境）
 module load anaconda3
-source activate svg2
+source activate svg
 # CONDA_ENV="${CONDA_ENV:-}"
 # if [ -n "$CONDA_ENV" ]; then
 #   source "$(conda info --base)/etc/profile.d/conda.sh"
@@ -92,6 +92,7 @@ EXTRA_EVAL_ARGS="${EXTRA_EVAL_ARGS:-}"
 
 # 基底模型目录：按顺序使用第一个在磁盘上存在的路径
 BASE_MODEL_CANDIDATES=(
+  "/gpfs/work/int/linhuadong23/weights/qwen25vl3b"
   "/data/phd23_weiguang_zhang/works/svg/qwen25vl3b"
   "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/qwen25vl3b"
   "/gpfs/work/int/weiguangzhang21/weights/qwen25vl3b"

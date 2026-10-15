@@ -9,7 +9,7 @@ fsdp_config:
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   
   # Qwen2.5-VL的正确层类名
-  fsdp_transformer_layer_cls_to_wrap: Qwen2_5_VLDecoderLayer
+  fsdp_transformer_layer_cls_to_wrap: Qwen2_5_VLDecoderLayer,Qwen2_5_VLVisionBlock
   
   # ⭐ 性能优化：使用HYBRID_SHARD而不是FULL_SHARD
   # HYBRID_SHARD: 节点内FULL_SHARD，节点间复制
@@ -39,7 +39,7 @@ fsdp_config:
   # ⭐ FSDP原生的Activation Checkpointing
   # A100 40GB显存充足，可以考虑关闭以提升速度
   # 如果显存够用，关闭可以提升10-15%速度
-  fsdp_activation_checkpointing: true
+  fsdp_activation_checkpointing: false
   
   # ⭐ 限制FSDP wrapper的数量，减少通信开销
   # 只wrap大于10M参数的模块
