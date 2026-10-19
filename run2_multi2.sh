@@ -49,6 +49,7 @@ SKELETON_COT="true"
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
 DATA_DIR_CANDIDATES=("/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/my_lis2_2"
+         "/gpfs/work/int/weiguangzhang21/data/my_stage2_merged"
          "/gpfs/work/int/weiguangzhang21/data/stage2/FZCaoQBLSJW"
          "/gpfs/work/int/weiguangzhang21/data/my_lis2_2"
          "/data/phd23_weiguang_zhang/works/svg/my_lis2_2")
@@ -85,6 +86,8 @@ PROJECT_NAME="omnisvg_stage2_4b_$(date +%Y%m%d_%H%M%S)"
 #   - "/path/to/checkpoint": Resume from specific checkpoint
 RESUME_CHECKPOINT_CANDIDATES=("/data/phd23_weiguang_zhang/works/svg/models--OmniSVG--OmniSVG1.1_4B/snapshots/e4d03a89aaa28468520b45dc2541098102264d4e/pytorch_model.bin"
          "/home/bingxing2/home/scx7l3f/weiguang_zhang/project/weights/omnisvg_checkpoint/pytorch_model.bin"
+         "/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
+         "./output_stage2/omnisvg_stage2_4b_20261013_044840/step_20000/model.safetensors"
          "/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin")
          # "/gpfs/work/int/weiguangzhang21/weights/pytorch_model.bin"
          # "output/omnisvg_4b_20260506_231738/step_10000/model.safetensors"

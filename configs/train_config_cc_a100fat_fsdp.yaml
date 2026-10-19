@@ -18,7 +18,7 @@ data:
     brief_description: 0.40
 
 training:
-  learning_rate: 2.0e-4
+  learning_rate: 1.0e-4
   weight_decay: 0.1
   max_grad_norm: 1.0
 
