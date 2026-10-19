@@ -446,8 +446,14 @@ def summarize(rows, args, task):
         extra_cols.append("output_tokens")
     if any(r.get("elapsed_sec") is not None for r in rows):
         extra_cols.append("elapsed_sec")
+    if any(r.get("gen_seconds") is not None for r in rows):
+        extra_cols.append("gen_seconds")
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["id", "candidate", "status", *extra_cols, *METRICS])
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["id", "candidate", "status", *extra_cols, *METRICS],
+            extrasaction="ignore",
+        )
         writer.writeheader()
         writer.writerows(rows)
     json_path = os.path.join(args.out_dir, f"{task}_summary.json")
