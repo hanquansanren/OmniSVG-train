@@ -377,7 +377,26 @@ def evaluate_samples(ids, load_gt, load_fallback, make_pred, find, args, lpips_m
     return rows
 
 
+def merge_inference_stats(rows, pred_dir):
+    """Attach per-sample infer timing/tokens from inference_stats.json if present."""
+    path = os.path.join(pred_dir, "inference_stats.json")
+    if not os.path.isfile(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    by_id = {s["id"]: s for s in data.get("samples", [])}
+    for r in rows:
+        st = by_id.get(r["id"])
+        if not st:
+            continue
+        r["output_tokens"] = st.get("output_tokens")
+        r["elapsed_sec"] = st.get("elapsed_sec")
+        r["gen_seconds"] = st.get("gen_seconds")
+    return data.get("summary") or {}
+
+
 def summarize(rows, args, task):
+    infer_summary = merge_inference_stats(rows, args.pred_dir)
     scored = [r for r in rows if r["mse"] is not None]
     summary = {
         "task": task,
@@ -399,9 +418,36 @@ def summarize(rows, args, task):
     if task == "complete":
         summary["pred_source"] = args.pred_source
 
+    tok_vals = [r["output_tokens"] for r in rows if r.get("output_tokens") is not None]
+    sec_vals = [r["elapsed_sec"] for r in rows if r.get("elapsed_sec") is not None]
+    if tok_vals:
+        summary["avg_output_tokens"] = float(np.mean(tok_vals))
+        summary["output_tokens_std"] = float(np.std(tok_vals))
+    elif infer_summary.get("avg_output_tokens") is not None:
+        summary["avg_output_tokens"] = infer_summary["avg_output_tokens"]
+        if infer_summary.get("output_tokens_std") is not None:
+            summary["output_tokens_std"] = infer_summary["output_tokens_std"]
+    else:
+        summary["avg_output_tokens"] = None
+
+    if sec_vals:
+        summary["avg_elapsed_sec"] = float(np.mean(sec_vals))
+        summary["elapsed_sec_std"] = float(np.std(sec_vals))
+    elif infer_summary.get("avg_elapsed_sec") is not None:
+        summary["avg_elapsed_sec"] = infer_summary["avg_elapsed_sec"]
+        if infer_summary.get("elapsed_sec_std") is not None:
+            summary["elapsed_sec_std"] = infer_summary["elapsed_sec_std"]
+    else:
+        summary["avg_elapsed_sec"] = None
+
     csv_path = os.path.join(args.out_dir, f"{task}_per_sample.csv")
+    extra_cols = []
+    if any(r.get("output_tokens") is not None for r in rows):
+        extra_cols.append("output_tokens")
+    if any(r.get("elapsed_sec") is not None for r in rows):
+        extra_cols.append("elapsed_sec")
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["id", "candidate", "status", *METRICS])
+        writer = csv.DictWriter(f, fieldnames=["id", "candidate", "status", *extra_cols, *METRICS])
         writer.writeheader()
         writer.writerows(rows)
     json_path = os.path.join(args.out_dir, f"{task}_summary.json")
@@ -417,6 +463,18 @@ def summarize(rows, args, task):
             print(f"  {m.upper():<6}{arrow}: N/A")
         else:
             print(f"  {m.upper():<6}{arrow}: {summary[m]:.5f} ± {summary[f'{m}_std']:.5f}")
+    if summary.get("avg_output_tokens") is not None:
+        std = summary.get("output_tokens_std")
+        std_s = f" ± {std:.1f}" if std is not None else ""
+        print(f"  TOKENS  : {summary['avg_output_tokens']:.1f}{std_s} (1st valid candidate)")
+    else:
+        print("  TOKENS  : N/A (re-run inference to produce inference_stats.json)")
+    if summary.get("avg_elapsed_sec") is not None:
+        std = summary.get("elapsed_sec_std")
+        std_s = f" ± {std:.3f}" if std is not None else ""
+        print(f"  SEC/SAMPLE: {summary['avg_elapsed_sec']:.3f}s{std_s}")
+    else:
+        print("  SEC/SAMPLE: N/A")
     print(f"Saved: {csv_path}\n       {json_path}")
     print("=" * 60)
     return summary

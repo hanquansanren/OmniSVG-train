@@ -268,13 +268,17 @@ if [ "${#SUMMARIES[@]}" -gt 0 ]; then
   "$EVAL_PYTHON" - "${SUMMARIES[@]}" <<'EOF' | tee "$LOG_DIR/summary_cand${CANDIDATE:-1}.txt"
 import json, sys
 fmt = lambda v: "N/A" if v is None else f"{v:.5f}"
-print("=" * 72)
-print(f"{'task':<10}{'cand':<6}{'ok/total':<10}{'MSE↓':<12}{'SSIM↑':<12}{'LPIPS↓':<12}")
-print("-" * 72)
+fmt_tok = lambda v: "N/A" if v is None else f"{v:.1f}"
+fmt_sec = lambda v: "N/A" if v is None else f"{v:.2f}s"
+print("=" * 96)
+print(f"{'task':<10}{'cand':<6}{'ok/total':<10}{'tok':<8}{'sec/s':<8}"
+      f"{'MSE↓':<12}{'SSIM↑':<12}{'LPIPS↓':<12}")
+print("-" * 96)
 for path in sys.argv[1:]:
     s = json.load(open(path))
     print(f"{s['task']:<10}{str(s['candidate']):<6}{str(s['num_ok']) + '/' + str(s['num_samples']):<10}"
+          f"{fmt_tok(s.get('avg_output_tokens')):<8}{fmt_sec(s.get('avg_elapsed_sec')):<8}"
           f"{fmt(s['mse']):<12}{fmt(s['ssim']):<12}{fmt(s['lpips']):<12}")
-print("=" * 72)
+print("=" * 96)
 EOF
 fi

@@ -9,6 +9,7 @@ import argparse
 import gc
 import yaml
 import glob
+import json
 import re
 import numpy as np
 import time
@@ -1195,12 +1196,53 @@ def is_valid_candidate(svg_str, img, subtype="illustration"):
     return True, "ok"
 
 
+def count_generated_output_tokens(raw_ids):
+    """Count model output tokens (new tokens), trimming PAD/BOS/EOS."""
+    ids = [t for t in raw_ids if t != PAD_TOKEN_ID]
+    if ids and ids[0] == BOS_TOKEN_ID:
+        ids = ids[1:]
+    if EOS_TOKEN_ID in ids:
+        ids = ids[:ids.index(EOS_TOKEN_ID)]
+    return len(ids)
+
+
+def write_inference_stats(output_dir, task, sample_rows):
+    """Persist per-sample inference timing / token stats for eval aggregation."""
+    if not sample_rows:
+        return
+    tok_vals = [r["output_tokens"] for r in sample_rows if r.get("output_tokens") is not None]
+    sec_vals = [r["elapsed_sec"] for r in sample_rows if r.get("elapsed_sec") is not None]
+    gen_vals = [r["gen_seconds"] for r in sample_rows if r.get("gen_seconds") is not None]
+    summary = {
+        "num_samples": len(sample_rows),
+        "num_success": sum(1 for r in sample_rows if r.get("success")),
+        "avg_output_tokens": float(np.mean(tok_vals)) if tok_vals else None,
+        "avg_elapsed_sec": float(np.mean(sec_vals)) if sec_vals else None,
+        "avg_gen_seconds": float(np.mean(gen_vals)) if gen_vals else None,
+    }
+    if tok_vals:
+        summary["output_tokens_std"] = float(np.std(tok_vals))
+    if sec_vals:
+        summary["elapsed_sec_std"] = float(np.std(sec_vals))
+    payload = {"task": task, "samples": sample_rows, "summary": summary}
+    out_path = os.path.join(output_dir, "inference_stats.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    print(f"Inference stats: avg_tokens={summary['avg_output_tokens']}, "
+          f"avg_sec/sample={summary['avg_elapsed_sec']} -> {out_path}")
+
+
 def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, repetition_penalty, 
                        max_length, num_samples, verbose=False, skeleton_cot=False, greedy=False):
-    """Generate candidate SVGs with full parameter control"""
+    """Generate candidate SVGs with full parameter control.
+
+    Returns:
+        (candidates, meta) where meta includes gen_seconds for the generate+decode loop.
+    """
     
     # Get the correct device from the model's embedding layer
     input_device = get_model_input_device()
+    gen_meta = {"gen_seconds": None}
     
     if verbose:
         print(f"  Using input device: {input_device}")
@@ -1242,6 +1284,7 @@ def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, r
         })
         actual_samples = num_samples + EXTRA_CANDIDATES_BUFFER
     
+    gen_t0 = time.time()
     try:
         with torch.no_grad():
             results = sketch_decoder.transformer.generate(
@@ -1337,6 +1380,7 @@ def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, r
                         'img': png_image,
                         'path_count': num_paths,
                         'index': len(all_candidates) + 1,
+                        'output_token_count': count_generated_output_tokens(raw_ids),
                     }
                     if cot_skel_secs is not None:
                         cand_dict['cot_sections'] = {
@@ -1362,8 +1406,10 @@ def generate_candidates(inputs, task_type, subtype, temperature, top_p, top_k, r
         print(f"Generation Error: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        gen_meta["gen_seconds"] = time.time() - gen_t0
     
-    return all_candidates
+    return all_candidates, gen_meta
 
 
 def save_results(candidates, output_dir, base_name, save_svg=True, save_png=False, save_all=False):
@@ -1430,6 +1476,7 @@ def process_text_to_svg(args):
     # Process each prompt
     total_success = 0
     total_failed = 0
+    infer_sample_stats = []
     
     for idx, prompt in enumerate(prompts):
         print(f"\n[{idx+1}/{len(prompts)}] Processing: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
@@ -1454,7 +1501,7 @@ def process_text_to_svg(args):
         inputs = prepare_inputs("text-to-svg", prompt)
         
         # Generate candidates
-        candidates = generate_candidates(
+        candidates, gen_meta = generate_candidates(
             inputs, "text-to-svg", subtype,
             temperature, top_p, top_k, rep_penalty,
             args.max_length, args.num_candidates,
@@ -1463,16 +1510,24 @@ def process_text_to_svg(args):
         )
         
         elapsed = time.time() - start_time
+        safe_name = "".join(c if c.isalnum() or c in ' -_' else '_' for c in prompt[:50]).strip()
+        safe_name = f"{idx+1:04d}_{safe_name}"
+        out_tok = candidates[0].get("output_token_count") if candidates else None
+        infer_sample_stats.append({
+            "id": safe_name,
+            "success": bool(candidates),
+            "elapsed_sec": round(elapsed, 4),
+            "gen_seconds": round(gen_meta.get("gen_seconds") or 0.0, 4),
+            "output_tokens": out_tok,
+            "num_candidates": len(candidates),
+        })
         
         if candidates:
-            # Create safe filename from prompt
-            safe_name = "".join(c if c.isalnum() or c in ' -_' else '_' for c in prompt[:50]).strip()
-            safe_name = f"{idx+1:04d}_{safe_name}"
-            
             saved = save_results(candidates, args.output, safe_name, 
                                save_svg=args.save_svg, save_png=args.save_png, save_all=args.save_all_candidates)
             
-            print(f"  ✓ Generated {len(candidates)} candidates in {elapsed:.2f}s")
+            print(f"  ✓ Generated {len(candidates)} candidates in {elapsed:.2f}s"
+                  + (f", tokens={out_tok}" if out_tok is not None else ""))
             print(f"  Saved: {', '.join(os.path.basename(f) for f in saved)}")
             total_success += 1
         else:
@@ -1484,6 +1539,7 @@ def process_text_to_svg(args):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     
+    write_inference_stats(args.output, "text-to-svg", infer_sample_stats)
     print("\n" + "="*60)
     print(f"Text-to-SVG Complete!")
     print(f"  Success: {total_success}/{len(prompts)}")
@@ -1534,6 +1590,7 @@ def process_image_to_svg(args):
     # Process each image
     total_success = 0
     total_failed = 0
+    infer_sample_stats = []
     
     for idx, img_path in enumerate(image_files):
         img_name = os.path.basename(img_path)
@@ -1563,7 +1620,7 @@ def process_image_to_svg(args):
                 inputs = prepare_inputs("image-to-svg", tmp_path)
                 
                 # Generate candidates
-                candidates = generate_candidates(
+                candidates, gen_meta = generate_candidates(
                     inputs, "image-to-svg", "image",
                     temperature, top_p, top_k, rep_penalty,
                     args.max_length, args.num_candidates,
@@ -1572,15 +1629,23 @@ def process_image_to_svg(args):
                 )
                 
                 elapsed = time.time() - start_time
+                base_name = os.path.splitext(img_name)[0]
+                out_tok = candidates[0].get("output_token_count") if candidates else None
+                infer_sample_stats.append({
+                    "id": base_name,
+                    "success": bool(candidates),
+                    "elapsed_sec": round(elapsed, 4),
+                    "gen_seconds": round(gen_meta.get("gen_seconds") or 0.0, 4),
+                    "output_tokens": out_tok,
+                    "num_candidates": len(candidates),
+                })
                 
                 if candidates:
-                    # Use original filename (without extension) as base name
-                    base_name = os.path.splitext(img_name)[0]
-                    
                     saved = save_results(candidates, args.output, base_name, 
                                        save_png=args.save_png, save_all=args.save_all_candidates)
                     
-                    print(f"  ✓ Generated {len(candidates)} candidates in {elapsed:.2f}s")
+                    print(f"  ✓ Generated {len(candidates)} candidates in {elapsed:.2f}s"
+                          + (f", tokens={out_tok}" if out_tok is not None else ""))
                     print(f"  Saved: {', '.join(os.path.basename(f) for f in saved)}")
                     total_success += 1
                 else:
@@ -1600,6 +1665,7 @@ def process_image_to_svg(args):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     
+    write_inference_stats(args.output, "image-to-svg", infer_sample_stats)
     print("\n" + "="*60)
     print(f"Image-to-SVG Complete!")
     print(f"  Success: {total_success}/{len(image_files)}")
@@ -1646,6 +1712,7 @@ def process_code_complement(args):
 
     total_success = 0
     total_failed = 0
+    infer_sample_stats = []
 
     for idx, sample in enumerate(samples):
         svg_path = sample["svg_path"]
@@ -1677,7 +1744,7 @@ def process_code_complement(args):
                 print(f"  Character: {meta['char_label']}")
                 print(f"  Partial SVG condition tokens: {meta['partial_token_count']}")
 
-            candidates = generate_candidates(
+            candidates, gen_meta = generate_candidates(
                 inputs, "code-complement", "image",
                 temperature, top_p, top_k, rep_penalty,
                 args.max_length, args.num_candidates,
@@ -1687,6 +1754,15 @@ def process_code_complement(args):
             )
 
             elapsed = time.time() - start_time
+            out_tok = candidates[0].get("output_token_count") if candidates else None
+            infer_sample_stats.append({
+                "id": base_name,
+                "success": bool(candidates),
+                "elapsed_sec": round(elapsed, 4),
+                "gen_seconds": round(gen_meta.get("gen_seconds") or 0.0, 4),
+                "output_tokens": out_tok,
+                "num_candidates": len(candidates),
+            })
 
             if candidates:
                 saved = save_code_complement_results(
@@ -1698,7 +1774,8 @@ def process_code_complement(args):
                     save_png=args.save_png,
                     save_all=args.save_all_candidates,
                 )
-                print(f"  ✓ Generated {len(candidates)} candidates in {elapsed:.2f}s")
+                print(f"  ✓ Generated {len(candidates)} candidates in {elapsed:.2f}s"
+                      + (f", tokens={out_tok}" if out_tok is not None else ""))
                 print(f"  Saved: {', '.join(os.path.basename(f) for f in saved)}")
                 total_success += 1
             else:
@@ -1711,11 +1788,20 @@ def process_code_complement(args):
                 import traceback
                 traceback.print_exc()
             total_failed += 1
+            infer_sample_stats.append({
+                "id": base_name,
+                "success": False,
+                "elapsed_sec": round(time.time() - start_time, 4),
+                "gen_seconds": None,
+                "output_tokens": None,
+                "num_candidates": 0,
+            })
 
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+    write_inference_stats(args.output, "code-complement", infer_sample_stats)
     print("\n" + "="*60)
     print("Code-Complement Complete!")
     print(f"  Success: {total_success}/{len(samples)}")
