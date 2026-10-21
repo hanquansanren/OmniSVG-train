@@ -968,6 +968,11 @@ def train(args, config: OmniSVGConfig):
         target_image_size=config.training.target_image_size,
     )
     
+    val_max_samples = config.training.val_max_samples
+    if val_max_samples > 0 and len(val_dataset) > val_max_samples:
+        accelerator.print(f"Validation subset: first {val_max_samples} of {len(val_dataset)} samples")
+        val_dataset = torch.utils.data.Subset(val_dataset, range(val_max_samples))
+    
     # Create collate functions
     train_collate = create_collate_fn(
         processor, 

@@ -45,6 +45,7 @@ logging:
   log_every: 20
   save_every: 2500
   val_every: 2000
+  val_max_samples: 500
 
 dataloader:
   num_workers: 8

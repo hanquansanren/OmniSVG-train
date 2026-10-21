@@ -283,6 +283,7 @@ class TrainConfig:
     log_every: int = 10
     save_every: int = 3000
     val_every: int = 5000
+    val_max_samples: int = 0  # 0 = use the full validation set
     
     # DataLoader
     num_workers: int = 8
@@ -353,6 +354,7 @@ class TrainConfig:
             log_every=as_int(logging.get('log_every'), 10),
             save_every=as_int(logging.get('save_every'), 3000),
             val_every=as_int(logging.get('val_every'), 5000),
+            val_max_samples=as_int(logging.get('val_max_samples'), 0),
             num_workers=as_int(dataloader.get('num_workers'), 8),
             seed=as_int(config.get('seed'), 2023),
         )
