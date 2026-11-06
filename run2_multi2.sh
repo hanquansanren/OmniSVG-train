@@ -76,7 +76,16 @@ fi
 OUTPUT_DIR="./output_stage2"
 
 # Project name (leave empty for auto-generated name)
-PROJECT_NAME="omnisvg_stage2_4b_$(date +%Y%m%d_%H%M%S)"
+# To continue an interrupted run, export PROJECT_NAME=<old run name> together with RESUME_STATE_DIR.
+PROJECT_NAME="${PROJECT_NAME:-omnisvg_stage2_4b_$(date +%Y%m%d_%H%M%S)}"
+
+# Full-state resume (optimizer/scheduler/RNG/step) from a step_N directory of an interrupted run.
+# Model weights then default to ${RESUME_STATE_DIR}/model.safetensors.
+# Optional: RESUME_BEST_VAL_LOSS=<best val loss of the old run>
+RESUME_STATE_DIR="${RESUME_STATE_DIR:-}"
+if [ -n "$RESUME_STATE_DIR" ] && [ -z "${RESUME_CHECKPOINT:-}" ]; then
+    RESUME_CHECKPOINT="${RESUME_STATE_DIR}/model.safetensors"
+fi
 
 # Resume from checkpoint
 # Options:
@@ -133,6 +142,18 @@ USE_WANDB="true"
 
 # Weights & Biases project name (optional, defaults to "omnisvg-training")
 WANDB_PROJECT="omnisvg-training"
+
+# The cluster's egress IP gets 403 from api.wandb.ai / api.forge.coreweave.com, so go through a relay.
+# Pass WANDB_BASE_URL explicitly to override; if no relay answers, train.py falls back to offline mode.
+WANDB_BASE_URL_CANDIDATES=("https://api.bandw.top" "https://api1.bandw.top")
+if [ "$USE_WANDB" = "true" ] && [ -z "${WANDB_BASE_URL:-}" ]; then
+    for _u in "${WANDB_BASE_URL_CANDIDATES[@]}"; do
+        if [ "$(curl -s -m 10 -o /dev/null -w '%{http_code}' "${_u}/healthz")" = "200" ]; then
+            export WANDB_BASE_URL="$_u"
+            break
+        fi
+    done
+fi
 
 # ==============================================================================
 # Advanced Configuration
@@ -203,6 +224,12 @@ fi
 if [ -n "$RESUME_CHECKPOINT" ]; then
     CMD_ARGS+=" --resume_from_checkpoint ${RESUME_CHECKPOINT}"
 fi
+if [ -n "$RESUME_STATE_DIR" ]; then
+    CMD_ARGS+=" --resume_state_dir ${RESUME_STATE_DIR}"
+fi
+if [ -n "${RESUME_BEST_VAL_LOSS:-}" ]; then
+    CMD_ARGS+=" --resume_best_val_loss ${RESUME_BEST_VAL_LOSS}"
+fi
 
 # Skeleton CoT
 if [ "$SKELETON_COT" = "true" ]; then
@@ -262,9 +289,14 @@ echo "Use HF Data:       ${USE_HF_DATA}"
 echo "Use Wandb:         ${USE_WANDB}"
 if [ "$USE_WANDB" = "true" ] && [ -n "$WANDB_PROJECT" ]; then
     echo "Wandb Project:     ${WANDB_PROJECT}"
+    echo "Wandb Base URL:    ${WANDB_BASE_URL:-unreachable, offline fallback}"
 fi
 if [ -n "$RESUME_CHECKPOINT" ]; then
     echo "Resume From:       ${RESUME_CHECKPOINT}"
+fi
+if [ -n "$RESUME_STATE_DIR" ]; then
+    echo "Resume State:      ${RESUME_STATE_DIR}"
+    echo "Resume Best Val:   ${RESUME_BEST_VAL_LOSS:-none}"
 fi
 echo "Accelerate Config: ${ACCELERATE_CONFIG:-default}"
 echo "Main Port:         ${MAIN_PROCESS_PORT}"
