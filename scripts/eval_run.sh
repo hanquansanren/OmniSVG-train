@@ -51,17 +51,17 @@ PYTHON="${PYTHON:-python}"
 EVAL_PYTHON="${EVAL_PYTHON:-$PYTHON}"
 
 # 要运行的任务：img2svg / complete，空格分隔
-TASKS="${TASKS:-complete}"
+TASKS="${TASKS:-img2svg}"
 # all = 推理 + 评测；infer = 只推理；eval = 只评测（复用已有推理结果）
 STAGE="${STAGE:-all}"
 
 TEST_DIR_IMG2SVG="${TEST_DIR_IMG2SVG:-./eval/eval_task1_1}"
-TEST_DIR_COMPLETE="${TEST_DIR_COMPLETE:-./eval/eval_task2}"
+TEST_DIR_COMPLETE="${TEST_DIR_COMPLETE:-./eval/stage1_old2new_real_val}"
 
 INFER_CONFIG_IMG2SVG="${INFER_CONFIG_IMG2SVG:-./configs/config_zhuan.yaml}"
 INFER_CONFIG_COMPLETE="${INFER_CONFIG_COMPLETE:-./configs/config_code_complement.yaml}"
 
-WEIGHT_MODEL="${WEIGHT_MODEL:-output_grpo/20260928_022117_5000/model.safetensors}"
+WEIGHT_MODEL="${WEIGHT_MODEL:-output/omnisvg_4b_20261014_065727/step_15000/model.safetensors}"
 # output_grpo/20260928_022117_5000/model.safetensors
 # output_stage2/omnisvg_stage2_4b_20260926_031414/step_15000/model.safetensors
 # output_grpo/grpo_4b_20260930_224442/step_300/pytorch_model.bin
