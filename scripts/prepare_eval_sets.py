@@ -48,7 +48,10 @@ DEFAULTS = {
         "/data/phd23_weiguang_zhang/works/svg_generation/"
         "phd23_weiguang_zhang_3/noisy_stage3/FZCaoQBLSJW/stage1_old2new"
     ),
-    "src_complete": "/data/phd23_weiguang_zhang/works/svg/my_lis2_2",
+    "src_complete": (
+        "/data/phd23_weiguang_zhang/works/svg_generation/"
+        "phd23_weiguang_zhang_3/noisy_stage3/FZCaoQBLSJW/S_d_label_flat"
+    ),
     "val_meta_name": "val_meta.csv",
     "num": 60,
     "seed": 42,

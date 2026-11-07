@@ -149,7 +149,9 @@ examples/*
 output_image*
 wandb
 eval/*
+eval600/*
 eval_results/*
 configs/job_bindings
 experiments/
 transfer_audit
+api_eval/*
