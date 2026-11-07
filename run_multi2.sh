@@ -37,7 +37,7 @@ DISABLE_TORCH_COMPILE="true"
 DISABLE_NCCL_P2P_IB="false" 
 
 # Number of GPUs to use
-NUM_GPUS=2
+NUM_GPUS=1
 
 # Batch size per GPU
 BATCH_SIZE=1
@@ -48,7 +48,8 @@ MAX_SEQ_LENGTH=2048
 # Data directory (should contain: train_meta.csv, val_meta.csv, svg/, png/)
 # 注意：如果不指定或留空，会使用 train_config 文件中的 data_dir
 # DATA_DIR="/data/phd23_weiguang_zhang/works/svg/MMSVG-icon-sample"
-DATA_DIR_CANDIDATES=("/gpfs/work/int/linhuadong23/data/noisy_stage3/FZCaoQBLSJW/stage1_old2new"
+DATA_DIR_CANDIDATES=("/gpfs/work/int/linhuadong23/data/noisy_stage3/FZCaoQBLSJW/stage1_old2new_real"
+                     "/gpfs/work/int/linhuadong23/data/noisy_stage3/FZCaoQBLSJW/stage1_old2new"
                      "/gpfs/work/int/weiguangzhang21/data/my_l11")
 
 
@@ -116,6 +117,20 @@ USE_WANDB="true"
 
 # Weights & Biases project name (optional, defaults to "omnisvg-training")
 WANDB_PROJECT="omnisvg-training"
+
+# The cluster's egress IP gets 403 from api.wandb.ai / api.forge.coreweave.com, so go through a relay.
+# Pass WANDB_BASE_URL explicitly to override; if no relay answers, train.py falls back to offline mode.
+WANDB_BASE_URL_CANDIDATES=("https://api.bandw.top" "https://api1.bandw.top")
+if [ "$USE_WANDB" = "true" ] && [ -z "${WANDB_BASE_URL:-}" ]; then
+    for _u in "${WANDB_BASE_URL_CANDIDATES[@]}"; do
+        if [ "$(curl -s -m 10 -o /dev/null -w '%{http_code}' "${_u}/healthz")" = "200" ]; then
+            export WANDB_BASE_URL="$_u"
+            break
+        fi
+    done
+fi
+
+
 
 # ==============================================================================
 # Advanced Configuration
@@ -235,9 +250,9 @@ else
 fi
 echo "Output Directory:  ${OUTPUT_DIR}/${PROJECT_NAME}"
 echo "Use HF Data:       ${USE_HF_DATA}"
-echo "Use Wandb:         ${USE_WANDB}"
 if [ "$USE_WANDB" = "true" ] && [ -n "$WANDB_PROJECT" ]; then
     echo "Wandb Project:     ${WANDB_PROJECT}"
+    echo "Wandb Base URL:    ${WANDB_BASE_URL:-unreachable, offline fallback}"
 fi
 if [ -n "$RESUME_CHECKPOINT" ]; then
 echo "Resume From:       ${RESUME_CHECKPOINT}"

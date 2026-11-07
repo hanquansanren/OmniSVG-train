@@ -32,11 +32,11 @@ data:
 # Training Configuration - 性能优化
 # ==============================================================================
 training:
-  learning_rate: 1.0e-4  # ⭐ 4卡学习率线性缩放：1e-4 * 4 = 4e-4
+  learning_rate: 5.0e-6  # ⭐ 4卡学习率线性缩放：1e-4 * 4 = 4e-4
   weight_decay: 0.1
   max_grad_norm: 1.0
   
-  epochs: 2
+  epochs: 3
   
   # ⭐ 关键优化：减少gradient accumulation
   # batch_size=2 * 4 GPU * grad_accum=2 = 有效batch 16

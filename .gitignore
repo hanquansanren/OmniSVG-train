@@ -155,3 +155,6 @@ configs/job_bindings
 experiments/
 transfer_audit
 api_eval/*
+scripts/submit_eval_j*
+metrics/*.csv
+metrics/*.tsv

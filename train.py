@@ -23,6 +23,7 @@ Usage:
     accelerate launch train.py --model_size 4B --resume_from_checkpoint auto
 """
 
+import math
 import os
 import sys
 
@@ -1122,27 +1123,48 @@ def train(args, config: OmniSVGConfig):
         }
         
         # 初始化wandb
-        wandb.init(
+        wandb_init_kwargs = dict(
             project=args.wandb_project or "omnisvg-training",
             name=args.project_name,
             config=wandb_config,
             dir=str(output_dir),
             resume="allow" if args.resume_from_checkpoint else False,
         )
+        try:
+            wandb.init(**wandb_init_kwargs)
+        except Exception as e:
+            # An unreachable W&B server must not kill a multi-day training job.
+            print(f"\n⚠ wandb.init failed: {str(e)[:200]}")
+            print("  Falling back to offline mode; upload later with `wandb sync`.")
+            # Without teardown the next init re-raises the cached online error.
+            wandb.teardown()
+            wandb_init_kwargs.pop("resume")
+            wandb.init(mode="offline", **wandb_init_kwargs)
         
-        print(f"\n✅ Weights & Biases initialized!")
+        print(f"\n✅ Weights & Biases initialized! (mode: {wandb.run.settings.mode})")
         print(f"📊 View training at: {wandb.run.get_url()}\n")
     
     # Save config
     if accelerator.is_main_process:
         config.save(str(output_dir / "config.yaml"))
-        with open(output_dir / "args.json", 'w') as f:
+        args_file = "args.json"
+        if args.resume_state_dir:
+            args_file = f"args_resume_{Path(args.resume_state_dir).name}.json"
+        with open(output_dir / args_file, 'w') as f:
             json.dump(vars(args), f, indent=2)
     
     # Resume from checkpoint
     starting_epoch = 0
     global_step = 0
+    resume_steps_in_epoch = 0
     best_val_loss = float('inf')
+    if args.resume_state_dir:
+        global_step, starting_epoch, resume_steps_in_epoch = restore_training_state(
+            args.resume_state_dir, model, optimizer, lr_scheduler,
+            len(train_dataloader), config.training.gradient_accumulation_steps, accelerator,
+        )
+        if args.resume_best_val_loss is not None:
+            best_val_loss = args.resume_best_val_loss
     
     # Training loop
     print(f"\n{'='*60}")
@@ -1178,7 +1200,15 @@ def train(args, config: OmniSVGConfig):
             desc=f"Epoch {epoch + 1}"
         )
         
-        for batch_messages, condition_seq_lists, pix_seq_lists, batch_task_types in train_dataloader:
+        epoch_dataloader = train_dataloader
+        if epoch == starting_epoch and resume_steps_in_epoch > 0:
+            epoch_dataloader = accelerator.skip_first_batches(
+                train_dataloader,
+                resume_steps_in_epoch * config.training.gradient_accumulation_steps,
+            )
+            progress_bar.update(resume_steps_in_epoch)
+        
+        for batch_messages, condition_seq_lists, pix_seq_lists, batch_task_types in epoch_dataloader:
             with accelerator.accumulate(model):
                 # Process batch
                 input_ids, attention_mask, pixel_values, image_grid_thw, labels, task_masks = \
@@ -1530,6 +1560,73 @@ def log_metrics(
         }, step=step)
 
 
+def restore_training_state(
+    state_dir: str,
+    model: nn.Module,
+    optimizer: Any,
+    lr_scheduler: Any,
+    num_batches_per_epoch: int,
+    grad_accum_steps: int,
+    accelerator: Accelerator,
+) -> Tuple[int, int, int]:
+    """Restore optimizer/scheduler/RNG written by save_checkpoint.
+
+    Model weights are not touched here: save_checkpoint merges the FSDP model shards into
+    model.safetensors and deletes them, so the weights are loaded by load_model instead.
+    `num_batches_per_epoch` must be the length of the prepared (per-process) dataloader.
+
+    Returns (global_step, starting_epoch, optimizer steps already done in starting_epoch).
+    """
+    from accelerate.checkpointing import load_accelerator_state
+    from accelerate.utils import DistributedType, load_fsdp_optimizer
+
+    state_dir = Path(state_dir)
+    with open(state_dir / "training_info.json") as f:
+        info = json.load(f)
+    global_step = int(info["step"])
+
+    rng_file = state_dir / f"random_states_{accelerator.process_index}.pkl"
+    if not rng_file.exists():
+        raise FileNotFoundError(
+            f"{rng_file} not found: resume must use the same number of processes as the saved run"
+        )
+
+    optimizers = []
+    if accelerator.distributed_type == DistributedType.FSDP:
+        load_fsdp_optimizer(
+            accelerator.state.fsdp_plugin, accelerator, optimizer,
+            getattr(model, "_orig_mod", model), str(state_dir),
+        )
+    else:
+        optimizers = [optimizer]
+    override = load_accelerator_state(
+        str(state_dir),
+        models=[],
+        optimizers=optimizers,
+        schedulers=[lr_scheduler],
+        dataloaders=[],
+        process_index=accelerator.process_index,
+    )
+    accelerator.step = override.get("step", accelerator.step)
+
+    steps_per_epoch = math.ceil(num_batches_per_epoch / grad_accum_steps)
+    starting_epoch, steps_in_epoch = divmod(global_step, steps_per_epoch)
+    if steps_in_epoch and starting_epoch != info.get("epoch", starting_epoch):
+        accelerator.print(
+            f"⚠ Epoch mismatch: checkpoint says epoch {info['epoch']}, recomputed {starting_epoch} "
+            f"(steps_per_epoch={steps_per_epoch}). Check dataset / num_processes / grad accumulation."
+        )
+
+    accelerator.print(f"\n{'='*60}")
+    accelerator.print(f"♻️  Resumed training state from: {state_dir}")
+    accelerator.print(f"   Global step:     {global_step}")
+    accelerator.print(f"   Epoch:           {starting_epoch + 1} ({steps_in_epoch}/{steps_per_epoch} steps done)")
+    accelerator.print(f"   Skipped batches: {steps_in_epoch * grad_accum_steps}")
+    accelerator.print(f"   LR:              {lr_scheduler.get_last_lr()[0]:.3e}")
+    accelerator.print(f"{'='*60}\n")
+    return global_step, starting_epoch, steps_in_epoch
+
+
 def save_checkpoint(
     output_dir: Path,
     step: int,
@@ -1787,6 +1884,11 @@ def main():
                             help="Maximum SVG sequence length")
     train_group.add_argument("--resume_from_checkpoint", type=str, default=None,
                             help="Path to checkpoint, HuggingFace repo ID (e.g., OmniSVG/OmniSVG1.1_4B), or 'auto'")
+    train_group.add_argument("--resume_state_dir", type=str, default=None,
+                            help="step_N directory written by save_checkpoint; restores optimizer/scheduler/RNG/step "
+                                 "and skips already-trained batches. Model weights default to <dir>/model.safetensors")
+    train_group.add_argument("--resume_best_val_loss", type=float, default=None,
+                            help="Best val loss of the interrupted run, so best_model is only replaced by a real improvement")
     
     # Logging options
     logging_group = parser.add_argument_group("Logging Configuration")
@@ -1820,6 +1922,9 @@ def main():
     # Set default project name
     if args.project_name is None:
         args.project_name = f"omnisvg_{args.model_size.lower()}"
+
+    if args.resume_state_dir and not args.resume_from_checkpoint:
+        args.resume_from_checkpoint = os.path.join(args.resume_state_dir, "model.safetensors")
     
     # Load configuration 导入tokenization.yaml和train_config.yaml
     config = OmniSVGConfig(
