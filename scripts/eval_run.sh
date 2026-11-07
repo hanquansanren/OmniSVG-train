@@ -14,9 +14,14 @@
 #   bash   scripts/eval_run.sh                                  # 本地直接运行
 #   WEIGHT_MODEL=output_grpo/xxx/step_800/pytorch_model.bin sbatch scripts/eval_run.sh
 #   TASKS="complete" STAGE=eval CANDIDATE=best bash scripts/eval_run.sh   # 只重新评测任务2
+#   OUTPUT_TAG=real31 TEST_DIR_IMG2SVG=./eval/real31 ...                 # 结果写到 eval_results/<tag>_<weight_tag>/
+#   POSTPROCESS=true ...                                                 # 额外评测后处理结果（<pred_dir>_pp/）
+#   TASKS=img2svg STAGE=eval POSTPROCESS=true TEST_DIR_IMG2SVG=./eval/real31 \
+#     OUTPUT_ROOT=./eval_results/<已有结果目录> bash scripts/eval_run.sh  # 对已推理结果补做后处理+评测
 #
 # 注意: sbatch 的 --output 目录需事先存在（mkdir -p logs）。
 # 测试集生成: bash scripts/prepare_eval_sets.sh [--overwrite]  （扩样本: NUM=600 ...）
+# img2svg/complete 若无 test_meta.csv，会退化为使用 png/*.png 文件名作为样本 id（与 eval_svg_tasks.read_ids 一致）。
 
 set -euo pipefail
 
@@ -75,7 +80,13 @@ _weight_tag() {
   esac
   echo "$(basename "$(dirname "$p")")_$(basename "$p")"
 }
-OUTPUT_ROOT="${OUTPUT_ROOT:-./eval_results/$(_weight_tag "$WEIGHT_MODEL")}"
+# 可选前缀，避免不同测试集共用同一 checkpoint 时覆盖 eval_results（例: OUTPUT_TAG=real31）
+OUTPUT_TAG="${OUTPUT_TAG:-}"
+_default_out="./eval_results/$(_weight_tag "$WEIGHT_MODEL")"
+if [ -n "$OUTPUT_TAG" ]; then
+  _default_out="./eval_results/${OUTPUT_TAG}_$(_weight_tag "$WEIGHT_MODEL")"
+fi
+OUTPUT_ROOT="${OUTPUT_ROOT:-$_default_out}"
 
 # 推理参数
 SAVE_PNG="${SAVE_PNG:-true}"
@@ -101,6 +112,11 @@ GT_SOURCE="${GT_SOURCE:-auto}"
 SAVE_VIS="${SAVE_VIS:-true}"
 NO_LPIPS="${NO_LPIPS:-false}"
 EXTRA_EVAL_ARGS="${EXTRA_EVAL_ARGS:-}"
+# true 时额外用 scripts/postprocess_svg.py 清理 SVG（去离群小段/重描截断），写到 <pred_dir>_pp/
+# 并同时评测原始与后处理结果。complete 任务只清理 *_completion.svg，残缺部分不动
+POSTPROCESS="${POSTPROCESS:-false}"
+# 追加传给 postprocess_svg.py 的参数，例如: POSTPROCESS_ARGS="--lookahead 12 --jump 20"
+POSTPROCESS_ARGS="${POSTPROCESS_ARGS:-}"
 
 # 基底模型目录：按顺序使用第一个在磁盘上存在的路径
 BASE_MODEL_CANDIDATES=(
@@ -235,8 +251,63 @@ run_eval() {
 
   echo ""
   echo "[eval:$task] ${cmd[*]}"
-  "${cmd[@]}" 2>&1 | tee "$LOG_DIR/eval_${task}_cand${CANDIDATE}.log"
+  "${cmd[@]}" 2>&1 | tee "$LOG_DIR/eval_${task}_cand${CANDIDATE}${4:-}.log"
   SUMMARIES+=( "$metrics_dir/${task}_summary.json" )
+}
+
+run_postprocess() {
+  local task="$1" pred_dir="$2" pp_dir="$3"
+  local cmd=( "$EVAL_PYTHON" ./scripts/postprocess_svg.py
+    --task "$task"
+    --pred_dir "$pred_dir"
+    --out_dir "$pp_dir"
+  )
+  # shellcheck disable=SC2206
+  [ -n "$POSTPROCESS_ARGS" ] && cmd+=( $POSTPROCESS_ARGS )
+
+  echo ""
+  echo "[postprocess] ${cmd[*]}"
+  rm -rf "$pp_dir"
+  "${cmd[@]}" 2>&1 | tee "$LOG_DIR/postprocess_${task}.log"
+}
+
+run_eval_with_pp() {
+  local task="$1" test_dir="$2" pred_dir="$3"
+  run_eval "$task" "$test_dir" "$pred_dir"
+  if [ "$POSTPROCESS" = "true" ]; then
+    run_postprocess "$task" "$pred_dir" "${pred_dir}_pp"
+    run_eval "$task" "$test_dir" "${pred_dir}_pp" "_pp"
+  fi
+}
+
+# test_meta.csv 可选：无则要求 png/ 下至少有一张图（与 metrics/eval_svg_tasks.py read_ids 行为一致）
+_require_test_sample_ids() {
+  local test_dir="$1" task="$2"
+  if [ -f "$test_dir/test_meta.csv" ]; then
+    return 0
+  fi
+  if [ "$task" = "img2svg" ] || [ "$task" = "complete" ]; then
+    local png_dir="$test_dir/png"
+    if [ ! -d "$png_dir" ]; then
+      echo "Error: $test_dir 无 test_meta.csv 且无 png/，无法确定评测样本 id" >&2
+      exit 1
+    fi
+    local _any=0
+    shopt -s nullglob
+    for _f in "$png_dir"/*.png; do
+      _any=1
+      break
+    done
+    shopt -u nullglob
+    if [ "$_any" -eq 0 ]; then
+      echo "Error: $png_dir 下无 .png（或提供 test_meta.csv）" >&2
+      exit 1
+    fi
+    echo "Note: $test_dir 无 test_meta.csv，将使用 png/*.png 的文件名（去扩展名）作为样本 id"
+    return 0
+  fi
+  echo "Error: $test_dir/test_meta.csv 不存在" >&2
+  exit 1
 }
 
 SUMMARIES=()
@@ -270,9 +341,9 @@ PY
   fi
 
   case "$STAGE" in
-    all)   run_infer "$task" "$test_dir" "$pred_dir" "$weight"; run_eval "$task" "$test_dir" "$pred_dir" ;;
+    all)   run_infer "$task" "$test_dir" "$pred_dir" "$weight"; run_eval_with_pp "$task" "$test_dir" "$pred_dir" ;;
     infer) run_infer "$task" "$test_dir" "$pred_dir" "$weight" ;;
-    eval)  run_eval "$task" "$test_dir" "$pred_dir" ;;
+    eval)  run_eval_with_pp "$task" "$test_dir" "$pred_dir" ;;
     *) echo "Error: 未知 STAGE '$STAGE'（可选 all / infer / eval）" >&2; exit 1 ;;
   esac
 done
@@ -288,15 +359,17 @@ import json, sys
 fmt = lambda v: "N/A" if v is None else f"{v:.5f}"
 fmt_tok = lambda v: "N/A" if v is None else f"{v:.1f}"
 fmt_sec = lambda v: "N/A" if v is None else f"{v:.2f}s"
-print("=" * 96)
-print(f"{'task':<10}{'cand':<6}{'ok/total':<10}{'tok':<8}{'sec/s':<8}"
+import os
+print("=" * 116)
+print(f"{'task':<10}{'pred':<20}{'cand':<6}{'ok/total':<10}{'tok':<8}{'sec/s':<8}"
       f"{'MSE↓':<12}{'SSIM↑':<12}{'LPIPS↓':<12}")
-print("-" * 96)
+print("-" * 116)
 for path in sys.argv[1:]:
     s = json.load(open(path))
-    print(f"{s['task']:<10}{str(s['candidate']):<6}{str(s['num_ok']) + '/' + str(s['num_samples']):<10}"
+    pred = os.path.basename(os.path.normpath(s.get('pred_dir', '')))
+    print(f"{s['task']:<10}{pred:<20}{str(s['candidate']):<6}{str(s['num_ok']) + '/' + str(s['num_samples']):<10}"
           f"{fmt_tok(s.get('avg_output_tokens')):<8}{fmt_sec(s.get('avg_elapsed_sec')):<8}"
           f"{fmt(s['mse']):<12}{fmt(s['ssim']):<12}{fmt(s['lpips']):<12}")
-print("=" * 96)
+print("=" * 116)
 EOF
 fi
