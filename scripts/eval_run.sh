@@ -317,7 +317,28 @@ for task in $TASKS; do
     complete) test_dir="$TEST_DIR_COMPLETE"; weight="$WEIGHT_COMPLETE"; pred_dir="$OUTPUT_ROOT/task2_complete" ;;
     *) echo "Error: 未知任务 '$task'（可选 img2svg / complete）" >&2; exit 1 ;;
   esac
-  _require_test_sample_ids "$test_dir" "$task"
+  if [ ! -f "$test_dir/test_meta.csv" ]; then
+    if [ -d "$test_dir/png" ] && compgen -G "$test_dir/png"/*.png > /dev/null 2>&1; then
+      echo "Warning: $test_dir/test_meta.csv 不存在；由 png/*.png 自动生成（id,len_pix；len_pix=0）" >&2
+      "$PYTHON" - "$test_dir" <<'PY'
+import os, csv, sys
+root = os.getcwd()
+td = sys.argv[1].lstrip("./").rstrip("/")
+png_dir = os.path.join(root, td, "png")
+ids = sorted(os.path.splitext(f)[0] for f in os.listdir(png_dir) if f.lower().endswith(".png"))
+out = os.path.join(root, td, "test_meta.csv")
+with open(out, "w", newline="", encoding="utf-8") as f:
+    w = csv.DictWriter(f, fieldnames=["id", "len_pix"])
+    w.writeheader()
+    for i in ids:
+        w.writerow({"id": i, "len_pix": "0"})
+print(f"Wrote {len(ids)} rows to {out}", file=sys.stderr)
+PY
+    else
+      echo "Error: $test_dir/test_meta.csv 不存在且无 png/*.png，请先运行 metrics/eval_svg_tasks.py split 或补齐 png/" >&2
+      exit 1
+    fi
+  fi
 
   case "$STAGE" in
     all)   run_infer "$task" "$test_dir" "$pred_dir" "$weight"; run_eval_with_pp "$task" "$test_dir" "$pred_dir" ;;
